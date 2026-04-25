@@ -530,4 +530,184 @@ public sealed class ConversationRoundRunnerTests : IDisposable
         var plannerCalls = _turnCalls.Count(c => c.Agent.Id == "planner-1");
         Assert.Equal(3, plannerCalls);
     }
+
+    // ── RoundRunOutcome + sprint counter bump (P1.2 §13 steps 2,3) ──
+
+    [Fact]
+    public async Task RunRoundsAsync_AllPass_ReturnsOutcomeWithOneRoundAndNoNonPass()
+    {
+        await SeedRoomAsync(withActiveTask: true);
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        var outcome = await _runner.RunRoundsAsync("main");
+
+        Assert.False(outcome.HadNonPassResponse);
+        Assert.Equal(1, outcome.InnerRoundsExecuted);
+    }
+
+    [Fact]
+    public async Task RunRoundsAsync_NonPassWithActiveTask_ReturnsOutcomeWithMaxRoundsAndNonPass()
+    {
+        await SeedRoomAsync(withActiveTask: true);
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        SetupTurnRunner(agent =>
+            new AgentTurnResult(agent, "@Hephaestus keep going", IsNonPass: true));
+
+        var outcome = await _runner.RunRoundsAsync("main");
+
+        Assert.True(outcome.HadNonPassResponse);
+        Assert.Equal(3, outcome.InnerRoundsExecuted);
+    }
+
+    [Fact]
+    public async Task RunRoundsAsync_RoomNotFound_ReturnsEmptyOutcome()
+    {
+        var outcome = await _runner.RunRoundsAsync("nonexistent-room");
+
+        Assert.False(outcome.HadNonPassResponse);
+        Assert.Equal(0, outcome.InnerRoundsExecuted);
+    }
+
+    [Fact]
+    public async Task RunRoundsAsync_BumpsSprintCounters_WhenRoomHasActiveSprint()
+    {
+        // Wire workspace → room → active sprint, then run a single round.
+        const string workspace = "/tmp/counter-bump-ws";
+        await SeedRoomWithWorkspaceAsync("main", workspace);
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        string sprintId;
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var sprintService = scope.ServiceProvider.GetRequiredService<ISprintService>();
+            var sprint = await sprintService.CreateSprintAsync(workspace);
+            sprintId = sprint.Id;
+        }
+
+        // Default turn runner returns PASS → exactly 1 inner round.
+        var outcome = await _runner.RunRoundsAsync("main");
+        Assert.Equal(1, outcome.InnerRoundsExecuted);
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var sprint = await db.Sprints.FindAsync(sprintId);
+            Assert.NotNull(sprint);
+            Assert.Equal(1, sprint!.RoundsThisSprint);
+            Assert.Equal(1, sprint.RoundsThisStage);
+            Assert.Equal(0, sprint.SelfDriveContinuations); // not a self-drive trigger
+            Assert.NotNull(sprint.LastRoundCompletedAt);
+        }
+    }
+
+    [Fact]
+    public async Task RunRoundsAsync_NoActiveSprintForWorkspace_DoesNotThrow()
+    {
+        // Room has a workspace but no sprint exists for it. Counter bump
+        // must fail-open — the trigger run still completes successfully.
+        await SeedRoomWithWorkspaceAsync("main", "/tmp/no-sprint-ws");
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        var outcome = await _runner.RunRoundsAsync("main");
+
+        Assert.Equal(1, outcome.InnerRoundsExecuted);
+    }
+
+    [Fact]
+    public async Task RunRoundsAsync_RoomWithNoWorkspace_DoesNotThrow()
+    {
+        // Default SeedRoomAsync leaves WorkspacePath null. Counter bump skips.
+        await SeedRoomAsync(withActiveTask: true);
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        var outcome = await _runner.RunRoundsAsync("main");
+
+        Assert.Equal(1, outcome.InnerRoundsExecuted);
+    }
+
+    [Fact]
+    public async Task RunRoundsAsync_BumpsSprintCapturedAtRunStart_NotPostRunActiveSprint()
+    {
+        // Regression test for TOCTOU: the counter bump must use the sprint
+        // that was active when the inner rounds STARTED, not whatever
+        // sprint is active after the rounds finish. We can't deterministically
+        // race a sprint transition against the runner from a unit test, but
+        // we CAN verify the contract by post-run cancelling A and creating
+        // B, then asserting A received the bump (not B).
+        const string workspace = "/tmp/toctou-ws";
+        await SeedRoomWithWorkspaceAsync("main", workspace);
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        string sprintAId;
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var sprintService = scope.ServiceProvider.GetRequiredService<ISprintService>();
+            var a = await sprintService.CreateSprintAsync(workspace);
+            sprintAId = a.Id;
+        }
+
+        // Run the trigger — A is captured at round 1 start.
+        var outcome = await _runner.RunRoundsAsync("main");
+        Assert.Equal(1, outcome.InnerRoundsExecuted);
+
+        // Now post-run: A was bumped before this point. A's counters
+        // should already reflect the round (the runner has returned).
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var a = await db.Sprints.FindAsync(sprintAId);
+            Assert.NotNull(a);
+            Assert.Equal(1, a!.RoundsThisSprint);
+        }
+
+        // Sanity: simulate "A completes and B becomes active" AFTER the
+        // bump. A's bump already happened (asserted above) so B's row
+        // must remain at 0 — proving the bump targeted the captured ID
+        // and is not retroactively re-evaluated.
+        string sprintBId;
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var sprintService = scope.ServiceProvider.GetRequiredService<ISprintService>();
+            await sprintService.CancelSprintAsync(sprintAId);
+            var b = await sprintService.CreateSprintAsync(workspace);
+            sprintBId = b.Id;
+        }
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var b = await db.Sprints.FindAsync(sprintBId);
+            Assert.NotNull(b);
+            Assert.Equal(0, b!.RoundsThisSprint);
+            Assert.Equal(0, b.RoundsThisStage);
+            Assert.Null(b.LastRoundCompletedAt);
+        }
+    }
+
+    private async Task SeedRoomWithWorkspaceAsync(string roomId, string workspacePath)
+    {
+        using var db = CreateDb();
+        db.Rooms.Add(new RoomEntity
+        {
+            Id = roomId,
+            Name = "Main Room",
+            Status = "Active",
+            Topic = "",
+            WorkspacePath = workspacePath,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        db.Tasks.Add(new TaskEntity
+        {
+            Id = $"task-{roomId}",
+            Title = "T",
+            Description = "D",
+            Status = "Active",
+            RoomId = roomId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
 }

@@ -370,6 +370,13 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | SignOffRequestedAt | DateTime? | | When sign-off was requested |
 | CreatedAt | DateTime | | Creation timestamp |
 | CompletedAt | DateTime? | | Completion timestamp |
+| BlockedAt | DateTime? | | Blocked-signal timestamp (P1.4); null when not blocked. Sprint stays Status=`Active` while blocked. |
+| BlockReason | string? | | Reason text, set/cleared with `BlockedAt`. |
+| RoundsThisSprint | int | default 0 | Total agent-turn rounds executed (P1.2 self-drive). |
+| RoundsThisStage | int | default 0 | Rounds since entering current stage; reset on stage advance (wired in the SelfDriveDecisionService PR, §13 step 6). |
+| SelfDriveContinuations | int | default 0 | How many times self-drive enqueued a continuation; ≤ `RoundsThisSprint`. |
+| LastRoundCompletedAt | DateTime? | | Last completion timestamp; populated even when `RoundsThisSprint` does not bump (zero-round trigger). |
+| MaxRoundsOverride | int? | | Per-sprint override of `Orchestrator:SelfDrive:MaxRoundsPerSprint` (P1.2 §6). Null = use configured default. |
 
 **Indexes**: `idx_sprints_workspace_status`, **UK**: `idx_sprints_one_active_per_workspace` (WorkspacePath, filtered: Status='Active'), **UK**: `idx_sprints_workspace_number_unique` (WorkspacePath, Number)
 

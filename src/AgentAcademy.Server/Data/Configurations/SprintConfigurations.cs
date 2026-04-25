@@ -17,6 +17,13 @@ internal sealed class SprintConfiguration : IEntityTypeConfiguration<SprintEntit
         entity.Property(e => e.AwaitingSignOff).HasDefaultValue(false);
         entity.Property(e => e.CreatedAt).IsRequired();
 
+        // Self-drive counters (P1.2). Defaults make existing rows safe — they
+        // backfill to "no rounds yet, no continuations yet" which is the
+        // correct semantic for sprints created before P1.2 shipped.
+        entity.Property(e => e.RoundsThisSprint).HasDefaultValue(0);
+        entity.Property(e => e.RoundsThisStage).HasDefaultValue(0);
+        entity.Property(e => e.SelfDriveContinuations).HasDefaultValue(0);
+
         entity.HasIndex(e => new { e.WorkspacePath, e.Status })
             .HasDatabaseName("idx_sprints_workspace_status");
         entity.HasIndex(e => e.WorkspacePath)

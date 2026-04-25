@@ -1488,4 +1488,139 @@ public class SprintServiceTests : IDisposable
         var afterUnblock = await _service.GetTimedOutSignOffSprintsAsync(TimeSpan.FromMinutes(1));
         Assert.Contains(afterUnblock, s => s.Id == sprint.Id);
     }
+
+    // ── IncrementRoundCountersAsync (P1.2 §13 step 3) ─────────────
+
+    [Fact]
+    public async Task IncrementRoundCounters_BumpsBothCounters_OnActiveSprint()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        var before = DateTime.UtcNow.AddSeconds(-1);
+
+        var rows = await _service.IncrementRoundCountersAsync(
+            sprint.Id, innerRoundsExecuted: 2, wasSelfDriveContinuation: false,
+            completedAt: DateTime.UtcNow);
+
+        Assert.Equal(1, rows);
+        await _db.Entry(sprint).ReloadAsync();
+        Assert.Equal(2, sprint.RoundsThisSprint);
+        Assert.Equal(2, sprint.RoundsThisStage);
+        Assert.Equal(0, sprint.SelfDriveContinuations);
+        Assert.NotNull(sprint.LastRoundCompletedAt);
+        Assert.True(sprint.LastRoundCompletedAt > before);
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_AccumulatesAcrossCalls()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        await _service.IncrementRoundCountersAsync(sprint.Id, 1, false, DateTime.UtcNow);
+        await _service.IncrementRoundCountersAsync(sprint.Id, 3, false, DateTime.UtcNow);
+
+        await _db.Entry(sprint).ReloadAsync();
+        Assert.Equal(4, sprint.RoundsThisSprint);
+        Assert.Equal(4, sprint.RoundsThisStage);
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_BumpsSelfDriveContinuations_WhenFlagSet()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        await _service.IncrementRoundCountersAsync(sprint.Id, 1, wasSelfDriveContinuation: true, DateTime.UtcNow);
+        await _service.IncrementRoundCountersAsync(sprint.Id, 1, wasSelfDriveContinuation: false, DateTime.UtcNow);
+        await _service.IncrementRoundCountersAsync(sprint.Id, 1, wasSelfDriveContinuation: true, DateTime.UtcNow);
+
+        await _db.Entry(sprint).ReloadAsync();
+        Assert.Equal(3, sprint.RoundsThisSprint);
+        Assert.Equal(2, sprint.SelfDriveContinuations);
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_ZeroRounds_UpdatesOnlyTimestamp()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        var rows = await _service.IncrementRoundCountersAsync(
+            sprint.Id, innerRoundsExecuted: 0, wasSelfDriveContinuation: false,
+            completedAt: DateTime.UtcNow);
+
+        Assert.Equal(1, rows);
+        await _db.Entry(sprint).ReloadAsync();
+        Assert.Equal(0, sprint.RoundsThisSprint);
+        Assert.Equal(0, sprint.RoundsThisStage);
+        Assert.NotNull(sprint.LastRoundCompletedAt);
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_NegativeRounds_TreatedAsZero()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        var rows = await _service.IncrementRoundCountersAsync(
+            sprint.Id, innerRoundsExecuted: -5, wasSelfDriveContinuation: false,
+            completedAt: DateTime.UtcNow);
+
+        Assert.Equal(1, rows);
+        await _db.Entry(sprint).ReloadAsync();
+        Assert.Equal(0, sprint.RoundsThisSprint);
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_NoOp_OnCompletedSprint()
+    {
+        // Use CancelSprintAsync to reach a terminal Status="Cancelled" cheaply
+        // — we don't need a real CompleteSprintAsync flow here, only a
+        // non-Active status to verify the Where-clause filter.
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.CancelSprintAsync(sprint.Id);
+
+        var rows = await _service.IncrementRoundCountersAsync(
+            sprint.Id, innerRoundsExecuted: 5, wasSelfDriveContinuation: true,
+            completedAt: DateTime.UtcNow);
+
+        Assert.Equal(0, rows);
+        await _db.Entry(sprint).ReloadAsync();
+        Assert.Equal(0, sprint.RoundsThisSprint);
+        Assert.Equal(0, sprint.SelfDriveContinuations);
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_NoOp_OnUnknownSprint()
+    {
+        var rows = await _service.IncrementRoundCountersAsync(
+            "no-such-sprint", innerRoundsExecuted: 1, wasSelfDriveContinuation: false,
+            completedAt: DateTime.UtcNow);
+
+        Assert.Equal(0, rows);
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_StillRunsOnBlockedSprint_DefensivePaperTrail()
+    {
+        // Design principle 7 forbids rounds running on blocked sprints —
+        // the decision service is responsible for not enqueueing them. But
+        // if a round somehow does run (e.g., in-flight at the moment of
+        // block), the counter still increments so the audit trail is
+        // accurate. Blocked sprints remain Status="Active" by P1.4 design.
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.MarkSprintBlockedAsync(sprint.Id, "test");
+
+        var rows = await _service.IncrementRoundCountersAsync(
+            sprint.Id, innerRoundsExecuted: 1, wasSelfDriveContinuation: false,
+            completedAt: DateTime.UtcNow);
+
+        Assert.Equal(1, rows);
+        await _db.Entry(sprint).ReloadAsync();
+        Assert.Equal(1, sprint.RoundsThisSprint);
+        Assert.NotNull(sprint.BlockedAt); // still blocked, not unblocked by counter bump
+    }
+
+    [Fact]
+    public async Task IncrementRoundCounters_RejectsEmptySprintId()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _service.IncrementRoundCountersAsync("", 1, false, DateTime.UtcNow));
+    }
 }

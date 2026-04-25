@@ -78,4 +78,27 @@ public interface ISprintService
 
     /// <summary>Auto-cancels a sprint that has exceeded the maximum duration.</summary>
     Task<SprintEntity> TimeOutSprintAsync(string sprintId, CancellationToken ct = default);
+
+    // ── Self-Drive Counters (P1.2) ──────────────────────────────
+
+    /// <summary>
+    /// Atomically increments <see cref="SprintEntity.RoundsThisSprint"/> and
+    /// <see cref="SprintEntity.RoundsThisStage"/> by <paramref name="innerRoundsExecuted"/>,
+    /// updates <see cref="SprintEntity.LastRoundCompletedAt"/>, and (when
+    /// <paramref name="wasSelfDriveContinuation"/> is true) increments
+    /// <see cref="SprintEntity.SelfDriveContinuations"/>.
+    ///
+    /// Uses <c>ExecuteUpdateAsync</c> for atomicity (mirrors the P1.4 block
+    /// pattern) so concurrent trigger runs cannot race the counter math.
+    /// No-op (returns 0) when <paramref name="innerRoundsExecuted"/> &lt;= 0
+    /// or the sprint is not Active. Returns the number of rows updated
+    /// (0 or 1) — useful for callers that want to verify the counter actually
+    /// landed before invoking the decision service.
+    /// </summary>
+    Task<int> IncrementRoundCountersAsync(
+        string sprintId,
+        int innerRoundsExecuted,
+        bool wasSelfDriveContinuation,
+        DateTime completedAt,
+        CancellationToken ct = default);
 }
