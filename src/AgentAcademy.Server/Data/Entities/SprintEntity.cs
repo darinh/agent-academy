@@ -18,6 +18,12 @@ public class SprintEntity
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
 
+    // Blocked signal (P1.4 narrow scope). When BlockedAt is non-null, the sprint
+    // is still Status="Active" — agents/orchestrator are paused waiting on a
+    // human or external resolution. Cleared on UnblockSprintAsync.
+    public DateTime? BlockedAt { get; set; }
+    public string? BlockReason { get; set; }
+
     // Navigation
     public SprintEntity? OverflowFromSprint { get; set; }
 }
