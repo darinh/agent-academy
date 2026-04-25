@@ -48,7 +48,7 @@ public sealed class InitializationServiceTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var settings = new SystemSettingsService(_db);
         var session = new ConversationSessionService(
-            _db, settings, executor,
+            _db, settings, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor),
             NullLogger<ConversationSessionService>.Instance);
         var messageService = new MessageService(
             _db, NullLogger<MessageService>.Instance, _catalog,

@@ -247,7 +247,7 @@ public class ErrorApiEndpointTests : IDisposable
         _catalog = new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>());
         var executor = Substitute.For<IAgentExecutor>();
         var sessionService = new ConversationSessionService(
-            _db, new SystemSettingsService(_db), executor,
+            _db, new SystemSettingsService(_db), executor, new TestDoubles.NoOpWatchdogAgentRunner(executor),
             NullLogger<ConversationSessionService>.Instance);
         var activityBus = new ActivityBroadcaster();
         var activityPublisher = new ActivityPublisher(_db, activityBus);
@@ -371,7 +371,7 @@ public class ErrorApiEndpointTests : IDisposable
             _roomService, _agentLocationService,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher,
                 new ConversationSessionService(_db, new SystemSettingsService(_db),
-                    Substitute.For<IAgentExecutor>(), NullLogger<ConversationSessionService>.Instance), new MessageBroadcaster()),
+                    Substitute.For<IAgentExecutor>(), new TestDoubles.NoOpWatchdogAgentRunner(Substitute.For<IAgentExecutor>()), NullLogger<ConversationSessionService>.Instance), new MessageBroadcaster()),
             new MessageBroadcaster(), _catalog, usageTracker, _errorTracker,
             new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
             new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),

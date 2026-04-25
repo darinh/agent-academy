@@ -101,6 +101,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
 
         // Scoped domain services (matches production registration)
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
         services.AddLogging(b => b.AddProvider(NullLoggerProvider.Instance));
 
         _serviceProvider = services.BuildServiceProvider();
@@ -134,7 +135,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
 
         // BreakoutLifecycleService — orchestrator only calls .Stop()
         var breakoutCompletion = new BreakoutCompletionService(
-            scopeFactory, _catalog, _executor, specManager,
+            scopeFactory, _catalog, _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor), specManager,
             pipeline, memoryLoader,
             NullLogger<BreakoutCompletionService>.Instance);
         var gitService = new GitService(NullLogger<GitService>.Instance, repositoryRoot: "/tmp/fake-repo");

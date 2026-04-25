@@ -86,6 +86,8 @@ public sealed class TaskDependencyHandlerTests : IDisposable
         services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp =>
+            new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<IAgentExecutor>()));
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(Substitute.For<IAgentExecutor>());

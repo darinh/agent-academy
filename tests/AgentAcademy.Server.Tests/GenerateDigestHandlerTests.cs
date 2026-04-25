@@ -80,7 +80,7 @@ public sealed class GenerateDigestHandlerTests : IDisposable
         _digestService = new LearningDigestService(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             TestCatalog,
-            _executor,
+            _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             _serviceProvider.GetRequiredService<CommandPipeline>(),
             NullLogger<LearningDigestService>.Instance);
 

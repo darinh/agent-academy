@@ -79,7 +79,7 @@ public class LearningDigestServiceTests : IDisposable
         _service = new LearningDigestService(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _catalog,
-            _executor,
+            _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             _serviceProvider.GetRequiredService<CommandPipeline>(),
             NullLogger<LearningDigestService>.Instance);
 
@@ -388,7 +388,7 @@ public class LearningDigestServiceTests : IDisposable
         var service = new LearningDigestService(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             catalogNoPlanner,
-            _executor,
+            _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             _serviceProvider.GetRequiredService<CommandPipeline>(),
             NullLogger<LearningDigestService>.Instance);
 

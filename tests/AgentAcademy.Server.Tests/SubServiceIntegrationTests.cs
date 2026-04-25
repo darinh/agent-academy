@@ -90,7 +90,7 @@ public class SubServiceIntegrationTests : IDisposable
         var settingsService = new SystemSettingsService(_db);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
-        var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
+        var sessionService = new ConversationSessionService(_db, settingsService, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), sessionLogger);
         var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, _activityPublisher);
         _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
         _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher, taskDeps);

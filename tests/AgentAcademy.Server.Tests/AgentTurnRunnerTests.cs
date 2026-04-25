@@ -61,7 +61,7 @@ public class AgentTurnRunnerTests : IDisposable
 
         var settingsService = new SystemSettingsService(_db);
         _sessionService = new ConversationSessionService(
-            _db, settingsService, _executor,
+            _db, settingsService, _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             NullLogger<ConversationSessionService>.Instance);
 
         _messageService = new MessageService(

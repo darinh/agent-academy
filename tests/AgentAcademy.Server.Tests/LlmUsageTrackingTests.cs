@@ -313,7 +313,7 @@ public class UsageApiEndpointTests : IDisposable
         _catalog = new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>());
         var executor = Substitute.For<IAgentExecutor>();
         var sessionService = new ConversationSessionService(
-            _db, new SystemSettingsService(_db), executor,
+            _db, new SystemSettingsService(_db), executor, new TestDoubles.NoOpWatchdogAgentRunner(executor),
             NullLogger<ConversationSessionService>.Instance);
         var activityBus = new ActivityBroadcaster();
         var activityPublisher = new ActivityPublisher(_db, activityBus);

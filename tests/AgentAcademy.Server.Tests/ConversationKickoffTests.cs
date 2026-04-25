@@ -61,6 +61,7 @@ public sealed class ConversationKickoffTests : IDisposable
             logger: NullLogger<SpecManager>.Instance);
         services.AddSingleton(specManager);
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
         services.AddLogging();
 
         _serviceProvider = services.BuildServiceProvider();
@@ -89,7 +90,7 @@ public sealed class ConversationKickoffTests : IDisposable
             executor, pipeline, null!, memoryLoader, scopeFactory,
             NullLogger<AgentTurnRunner>.Instance, new TestDoubles.NoOpAgentLivenessTracker());
         var breakoutCompletion = new BreakoutCompletionService(
-            scopeFactory, Catalog, executor, specManager,
+            scopeFactory, Catalog, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), specManager,
             pipeline, memoryLoader,
             NullLogger<BreakoutCompletionService>.Instance);
         var gitService = new GitService(NullLogger<GitService>.Instance, repositoryRoot: "/tmp/fake-repo");

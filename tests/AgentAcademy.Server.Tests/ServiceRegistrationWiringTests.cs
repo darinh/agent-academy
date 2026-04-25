@@ -257,6 +257,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var expectedInterfaces = new[]
         {
@@ -283,6 +284,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentConfigService)
@@ -294,6 +296,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IConversationSessionService)
@@ -305,6 +308,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var expectedInterfaces = new[]
         {
@@ -327,6 +331,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var forwardedInterfaces = new[]
         {
@@ -350,6 +355,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var expectedInterfaces = new[]
         {
@@ -370,6 +376,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var forwardedInterfaces = new[]
         {
@@ -391,6 +398,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var expectedInterfaces = new[]
         {
@@ -411,6 +419,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var forwardedInterfaces = new[]
         {
@@ -432,6 +441,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var expectedInterfaces = new[]
         {
@@ -454,6 +464,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var forwardedInterfaces = new[]
         {
@@ -477,6 +488,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var expectedInterfaces = new[]
         {
@@ -499,6 +511,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var forwardedInterfaces = new[]
         {
@@ -522,6 +535,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var expectedInterfaces = new[]
         {
@@ -541,6 +555,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         var forwardedInterfaces = new[]
         {
@@ -561,6 +576,7 @@ public sealed class ServiceRegistrationWiringTests
     {
         var services = new ServiceCollection();
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
 
         // Verify forward registrations use factory pattern (not direct type mapping)
         var forwardedInterfaces = new[]

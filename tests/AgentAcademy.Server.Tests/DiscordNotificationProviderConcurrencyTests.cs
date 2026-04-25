@@ -407,7 +407,7 @@ public class DiscordNotificationProviderConcurrencyTests
         var memoryLoader = new AgentMemoryLoader(
             scopeFactory, Substitute.For<ILogger<AgentMemoryLoader>>());
         var breakoutCompletion = new BreakoutCompletionService(
-            scopeFactory, catalog, executor, specManager, pipeline,
+            scopeFactory, catalog, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), specManager, pipeline,
             memoryLoader, Substitute.For<ILogger<BreakoutCompletionService>>());
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, catalog, executor, specManager, gitService,
