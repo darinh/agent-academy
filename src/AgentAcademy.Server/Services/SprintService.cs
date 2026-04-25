@@ -22,17 +22,20 @@ public sealed class SprintService : Contracts.ISprintService
     private readonly IActivityBroadcaster _activityBus;
     private readonly ISystemSettingsService _settings;
     private readonly ILogger<SprintService> _logger;
+    private readonly ISprintKickoffService? _kickoff;
 
     public SprintService(
         AgentAcademyDbContext db,
         IActivityBroadcaster activityBus,
         ISystemSettingsService settings,
-        ILogger<SprintService> logger)
+        ILogger<SprintService> logger,
+        ISprintKickoffService? kickoff = null)
     {
         _db = db;
         _activityBus = activityBus;
         _settings = settings;
         _logger = logger;
+        _kickoff = kickoff;
     }
 
     // ── Create ───────────────────────────────────────────────────
@@ -142,6 +145,14 @@ public sealed class SprintService : Contracts.ISprintService
             "Created sprint #{Number} ({Id}) for workspace {Workspace}{Overflow}",
             sprint.Number, sprint.Id, workspacePath,
             overflowFrom is not null ? $" (overflow from {overflowFrom})" : "");
+
+        // Post the kickoff coordination message and wake the orchestrator so
+        // agents pick up the new sprint without further human input. Best-effort:
+        // failures are logged inside PostKickoffAsync and never propagate.
+        if (_kickoff is not null)
+        {
+            await _kickoff.PostKickoffAsync(sprint, trigger);
+        }
 
         return sprint;
     }

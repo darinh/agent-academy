@@ -5,6 +5,8 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace AgentAcademy.Server.Tests;
 
@@ -1043,5 +1045,45 @@ public class SprintServiceTests : IDisposable
         var completed = await _db.Rooms.FindAsync("completed-room");
         Assert.Equal("Implementation", archived!.CurrentPhase);
         Assert.Equal("FinalSynthesis", completed!.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task CreateSprint_InvokesKickoffServiceWithCreatedSprintAndTrigger()
+    {
+        var kickoff = Substitute.For<AgentAcademy.Server.Services.Contracts.ISprintKickoffService>();
+        var svc = new SprintService(
+            _db, new ActivityBroadcaster(), _settings, NullLogger<SprintService>.Instance, kickoff);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace, trigger: "scheduled");
+
+        await kickoff.Received(1).PostKickoffAsync(
+            Arg.Is<SprintEntity>(s => s.Id == sprint.Id && s.Number == sprint.Number),
+            "scheduled",
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateSprint_KickoffThrows_SprintRowStillPersisted()
+    {
+        var kickoff = Substitute.For<AgentAcademy.Server.Services.Contracts.ISprintKickoffService>();
+        kickoff
+            .PostKickoffAsync(Arg.Any<SprintEntity>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var svc = new SprintService(
+            _db, new ActivityBroadcaster(), _settings, NullLogger<SprintService>.Instance, kickoff);
+
+        // Contract: ISprintKickoffService implementations must not throw — the production
+        // SprintKickoffService catches its own exceptions. If a rogue implementation does
+        // throw, we accept either: (a) the exception propagates, or (b) it is swallowed.
+        // Either way the sprint row must already be committed before kickoff runs, so the
+        // workspace is not left in a partially-created state.
+        try { await svc.CreateSprintAsync(TestWorkspace); }
+        catch (InvalidOperationException) { /* acceptable per the comment above */ }
+
+        var stored = await _db.Sprints
+            .Where(s => s.WorkspacePath == TestWorkspace && s.Status == "Active")
+            .FirstOrDefaultAsync();
+        Assert.NotNull(stored);
     }
 }
