@@ -438,9 +438,48 @@ public sealed class SprintArtifactService : ISprintArtifactService
         catch (JsonException ex)
         {
             throw new ArgumentException(
-                $"Invalid JSON for artifact type '{type}': {ex.Message}", nameof(content), ex);
+                $"Invalid JSON for artifact type '{type}': {ex.Message}{SchemaHintSuffix(artifactType)}",
+                nameof(content), ex);
+        }
+        catch (ArgumentException ex) when (ex.ParamName != "type"
+            && !ex.Message.Contains("Expected schema:", StringComparison.Ordinal))
+        {
+            // Field-level validation (RequireString, RequireList, deserialize-to-null, and
+            // SelfEvaluationReport semantic checks) throws plain ArgumentException without
+            // the schema. Augment with a compact schema hint so agents can self-correct on
+            // the next attempt instead of round-burning to guess the shape.
+            throw new ArgumentException(
+                $"{ex.Message}{SchemaHintSuffix(artifactType)}",
+                ex.ParamName,
+                ex);
         }
     }
+
+    /// <summary>
+    /// Returns a compact JSON schema hint for a known artifact type, formatted as
+    /// a suffix to append to a validation error message. Empty string for types
+    /// without a schema (OverflowRequirements is free-form).
+    /// </summary>
+    internal static string SchemaHintSuffix(ArtifactType type)
+    {
+        var hint = GetSchemaHint(type);
+        return string.IsNullOrEmpty(hint) ? string.Empty : $" Expected schema: {hint}";
+    }
+
+    private static string GetSchemaHint(ArtifactType type) => type switch
+    {
+        ArtifactType.RequirementsDocument =>
+            """{"Title":"...","Description":"...","InScope":["..."],"OutOfScope":["..."]}""",
+        ArtifactType.SprintPlan =>
+            """{"Summary":"...","Phases":[{"Name":"...","Description":"...","Deliverables":["..."]}],"OverflowRequirements":["..."]}""",
+        ArtifactType.ValidationReport =>
+            """{"Verdict":"...","Findings":["..."],"RequiredChanges":["..."]}""",
+        ArtifactType.SprintReport =>
+            """{"Summary":"...","Delivered":["..."],"Learnings":["..."],"OverflowRequirements":["..."]}""",
+        ArtifactType.SelfEvaluationReport =>
+            """{"Attempt":1,"Items":[{"TaskId":"...","SuccessCriteria":"...","Verdict":"PASS|FAIL|UNVERIFIED","Evidence":"...","FixPlan":null}],"OverallVerdict":"AllPass|AnyFail|Unverified","Notes":null}""",
+        _ => string.Empty,
+    };
 
     /// <summary>
     /// Static (parse-level) validation for <see cref="ArtifactType.SelfEvaluationReport"/>
