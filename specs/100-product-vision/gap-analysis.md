@@ -75,12 +75,12 @@ This document is brutally honest. Where the spec elsewhere in this repo says "Im
 **Evidence**: Needs verification of orchestrator state-emit hooks.
 **Impact**: Human has no out-of-band signal that their attention is needed.
 
-### G8 — Room Lifecycle Incomplete (🟡 Important)
+### G8 — Room Lifecycle Incomplete (✅ CLOSED by P1.8)
 
 **Vision**: Completed sprint → room becomes read-only, agents go offline, room remains searchable.
-**Code**: Room Status enum may include Completed/Archived, but agent presence in such rooms is not actively unsubscribed and chat lock-down is not enforced server-side.
-**Evidence**: Needs investigation in `RoomService` and the SignalR hub.
-**Impact**: Old rooms become noise; agents may respond in them; chat history isn't crisply scoped to one sprint.
+**Status**: Closed 2026-04-25. `MessageService.AddAgentMessageAsync` / `AddHumanMessageAsync` reject writes to rooms in Completed or Archived status with `RoomReadOnlyException` → HTTP 409 Conflict. `SprintService.CompleteSprintAsync` / `CancelSprintAsync` / `TimeOutSprintAsync` invoke `RoomLifecycleService.MarkSprintRoomsCompletedAsync` **in the same transaction as the sprint state change**, evacuating agents from the frozen rooms, archiving descendant breakout rooms (including those whose parent was already flipped Completed at FinalSynthesis), and evacuating breakout occupants. Auto-start provisions a fresh default room before the next sprint is created so it isn't inert. Rooms remain readable — only writes are locked.
+**Evidence**: `SprintService.cs` (PersistTerminalSprintWithRoomFreezeAsync), `RoomLifecycleService.cs` (MarkSprintRoomsCompletedAsync), `MessageService.cs` (IsTerminalRoomStatus guards), `RoomReadOnlyException.cs`, tests in `RoomLifecycleServiceTests.cs` + `SprintServiceTests.cs` + `MessageServiceTests.cs`.
+**Review**: Two adversarial rounds (gpt-5.3-codex + gpt-5.5 + claude-opus-4.6). Round-1 caught stranded breakouts + race via fire-and-forget hosted service. Round-2 caught atomicity race (sprint visible Completed before rooms frozen), stranded breakouts under already-Completed parents (SprintStageService FinalSynthesis), inert auto-start (all rooms frozen before next sprint creation), PK collision on `{slug}-main`. All addressed.
 
 ### G9 — Forge Not Wired to Sprint Planning (🟡 Important)
 

@@ -949,4 +949,235 @@ public class RoomLifecycleServiceTests : IDisposable
 
         Assert.Equal(0, count);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  MarkSprintRoomsCompletedAsync (P1.8)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_FlipsActiveAndIdleRooms_InWorkspace()
+    {
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db, WorkspacePath);
+        db.Rooms.Add(MakeRoom("room-a", "Breakout A", nameof(RoomStatus.Active), WorkspacePath));
+        db.Rooms.Add(MakeRoom("room-b", "Breakout B", nameof(RoomStatus.Idle), WorkspacePath));
+        db.SaveChanges();
+
+        var transitioned = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        Assert.Equal(3, transitioned);
+        var rooms = await db.Rooms.Where(r => r.WorkspacePath == WorkspacePath).ToListAsync();
+        Assert.All(rooms, r => Assert.Equal(nameof(RoomStatus.Completed), r.Status));
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_SkipsAlreadyTerminalRooms()
+    {
+        var (svc, db) = CreateScope();
+        db.Rooms.Add(MakeRoom("room-completed", status: nameof(RoomStatus.Completed), workspacePath: WorkspacePath));
+        db.Rooms.Add(MakeRoom("room-archived", status: nameof(RoomStatus.Archived), workspacePath: WorkspacePath));
+        db.Rooms.Add(MakeRoom("room-active", status: nameof(RoomStatus.Active), workspacePath: WorkspacePath));
+        db.SaveChanges();
+
+        var transitioned = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        Assert.Equal(1, transitioned);
+        Assert.Equal(nameof(RoomStatus.Archived),
+            (await db.Rooms.FindAsync("room-archived"))!.Status);
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync("room-active"))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_DoesNotAffectOtherWorkspaces()
+    {
+        var (svc, db) = CreateScope();
+        db.Rooms.Add(MakeRoom("ours", status: nameof(RoomStatus.Active), workspacePath: WorkspacePath));
+        db.Rooms.Add(MakeRoom("theirs", status: nameof(RoomStatus.Active), workspacePath: "/workspace/other"));
+        db.SaveChanges();
+
+        var transitioned = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        Assert.Equal(1, transitioned);
+        Assert.Equal(nameof(RoomStatus.Active),
+            (await db.Rooms.FindAsync("theirs"))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_EvacuatesAgentsToWorkspaceDefault()
+    {
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db, WorkspacePath);
+        db.Rooms.Add(MakeRoom("breakout", "Breakout", nameof(RoomStatus.Active), WorkspacePath));
+        db.AgentLocations.Add(MakeAgentLocation("agent-1", "breakout"));
+        db.SaveChanges();
+
+        await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        var location = await db.AgentLocations.FindAsync("agent-1");
+        Assert.NotNull(location);
+        Assert.Equal(DefaultRoomId, location!.RoomId);
+        Assert.Equal(nameof(AgentState.Idle), location.State);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_EvacuatesBreakoutOccupantsToo()
+    {
+        // Agents in a breakout descended from a sprint room must be released:
+        // the breakout itself is being archived in the same transaction, so
+        // leaving the agent's BreakoutRoomId set would strand them in a
+        // now-archived breakout.
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db, WorkspacePath);
+        db.Rooms.Add(MakeRoom("main", "Main Room", nameof(RoomStatus.Active), WorkspacePath));
+        db.BreakoutRooms.Add(new BreakoutRoomEntity
+        {
+            Id = "breakout-x",
+            Name = "Breakout X",
+            ParentRoomId = "main",
+            AssignedAgentId = "agent-1",
+            Status = nameof(RoomStatus.Active),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        db.AgentLocations.Add(new AgentLocationEntity
+        {
+            AgentId = "agent-1",
+            RoomId = "main",
+            BreakoutRoomId = "breakout-x",
+            State = nameof(AgentState.Working),
+            UpdatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+
+        await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        var location = await db.AgentLocations.FindAsync("agent-1");
+        Assert.NotNull(location);
+        Assert.Equal(DefaultRoomId, location!.RoomId);
+        Assert.Null(location.BreakoutRoomId);
+        Assert.Equal(nameof(AgentState.Idle), location.State);
+
+        var breakout = await db.BreakoutRooms.FindAsync("breakout-x");
+        Assert.NotNull(breakout);
+        Assert.Equal(nameof(RoomStatus.Archived), breakout!.Status);
+        Assert.Equal(nameof(BreakoutRoomCloseReason.Cancelled), breakout.CloseReason);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_LeavesUnrelatedBreakoutsAlone()
+    {
+        // A breakout whose ParentRoomId points at a room in a DIFFERENT
+        // workspace must not be archived, and its occupant must be untouched.
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db, WorkspacePath);
+        db.Rooms.Add(MakeRoom("main", "Main Room", nameof(RoomStatus.Active), WorkspacePath));
+        db.Rooms.Add(MakeRoom("other-main", "Other Main", nameof(RoomStatus.Active), "/workspace/other"));
+        db.BreakoutRooms.Add(new BreakoutRoomEntity
+        {
+            Id = "other-breakout",
+            Name = "Other Breakout",
+            ParentRoomId = "other-main",
+            AssignedAgentId = "other-agent",
+            Status = nameof(RoomStatus.Active),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        db.AgentLocations.Add(new AgentLocationEntity
+        {
+            AgentId = "other-agent",
+            RoomId = "other-main",
+            BreakoutRoomId = "other-breakout",
+            State = nameof(AgentState.Working),
+            UpdatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+
+        await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        var location = await db.AgentLocations.FindAsync("other-agent");
+        Assert.NotNull(location);
+        Assert.Equal("other-main", location!.RoomId);
+        Assert.Equal("other-breakout", location.BreakoutRoomId);
+        Assert.Equal(nameof(AgentState.Working), location.State);
+
+        var breakout = await db.BreakoutRooms.FindAsync("other-breakout");
+        Assert.NotNull(breakout);
+        Assert.Equal(nameof(RoomStatus.Active), breakout!.Status);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_ArchivesBreakoutsUnderAlreadyCompletedParent()
+    {
+        // SprintStageService flips parent rooms to Completed when a sprint
+        // enters FinalSynthesis — before CompleteSprintAsync runs. By the
+        // time the lifecycle pass runs there may be no Active parent rooms
+        // to transition, but descendant breakouts could still be Active.
+        // They MUST be archived and their occupants released. If they were
+        // left stranded, agents would be trapped in breakouts whose parent
+        // room is read-only. Adversarial-review round-2 finding (Issue 5).
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db, WorkspacePath);
+        db.Rooms.Add(MakeRoom(
+            "main-already-completed",
+            "Main (stage-completed)",
+            nameof(RoomStatus.Completed),
+            WorkspacePath));
+        db.BreakoutRooms.Add(new BreakoutRoomEntity
+        {
+            Id = "stranded-breakout",
+            Name = "Stranded",
+            ParentRoomId = "main-already-completed",
+            AssignedAgentId = "stranded-agent",
+            Status = nameof(RoomStatus.Active),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        db.AgentLocations.Add(new AgentLocationEntity
+        {
+            AgentId = "stranded-agent",
+            RoomId = "main-already-completed",
+            BreakoutRoomId = "stranded-breakout",
+            State = nameof(AgentState.Working),
+            UpdatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+
+        await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        var breakout = await db.BreakoutRooms.FindAsync("stranded-breakout");
+        Assert.NotNull(breakout);
+        Assert.Equal(nameof(RoomStatus.Archived), breakout!.Status);
+        Assert.Equal(nameof(BreakoutRoomCloseReason.Cancelled), breakout.CloseReason);
+
+        var location = await db.AgentLocations.FindAsync("stranded-agent");
+        Assert.NotNull(location);
+        Assert.Equal(DefaultRoomId, location!.RoomId);
+        Assert.Null(location.BreakoutRoomId);
+        Assert.Equal(nameof(AgentState.Idle), location.State);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_IsIdempotent()
+    {
+        var (svc, db) = CreateScope();
+        db.Rooms.Add(MakeRoom("r1", status: nameof(RoomStatus.Active), workspacePath: WorkspacePath));
+        db.SaveChanges();
+
+        var first = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+        var second = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        Assert.Equal(1, first);
+        Assert.Equal(0, second);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_EmptyWorkspacePath_ReturnsZero()
+    {
+        var (svc, _) = CreateScope();
+
+        var transitioned = await svc.MarkSprintRoomsCompletedAsync("", "sprint-1");
+
+        Assert.Equal(0, transitioned);
+    }
 }

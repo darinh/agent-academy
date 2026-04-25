@@ -33,4 +33,17 @@ public interface IRoomLifecycleService
     /// and archives them. Returns the count of rooms cleaned up.
     /// </summary>
     Task<int> CleanupStaleRoomsAsync();
+
+    /// <summary>
+    /// Marks every non-terminal room belonging to the given workspace as
+    /// <see cref="Shared.Models.RoomStatus.Completed"/> in response to a sprint
+    /// completing or being cancelled. Evacuates agents back to the workspace
+    /// default room and archives every active breakout descended from the
+    /// workspace's rooms (including breakouts whose parent room was already
+    /// marked Completed by stage advancement). Already-Archived rooms are
+    /// skipped. Idempotent: a second call with no remaining non-terminal
+    /// rooms or active breakouts is a no-op.
+    /// Returns the number of rooms transitioned (does not include breakouts).
+    /// </summary>
+    Task<int> MarkSprintRoomsCompletedAsync(string workspacePath, string? sprintId = null);
 }

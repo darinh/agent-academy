@@ -176,6 +176,10 @@ public class CollaborationController : ControllerBase
         {
             return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_message"));
         }
+        catch (RoomReadOnlyException ex)
+        {
+            return Conflict(ApiProblem.Conflict(ex.Message, "room_read_only"));
+        }
         catch (InvalidOperationException ex)
         {
             return NotFound(ApiProblem.NotFound(ex.Message));
@@ -228,6 +232,10 @@ public class CollaborationController : ControllerBase
         catch (ArgumentException ex)
         {
             return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_message"));
+        }
+        catch (RoomReadOnlyException ex)
+        {
+            return Conflict(ApiProblem.Conflict(ex.Message, "room_read_only"));
         }
         catch (InvalidOperationException ex)
         {

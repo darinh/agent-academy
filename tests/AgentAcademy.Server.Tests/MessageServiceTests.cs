@@ -928,4 +928,76 @@ public class MessageServiceTests : IDisposable
         }
         finally { unsub(); }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  P1.8 — Read-only enforcement on Completed/Archived rooms
+    // ═══════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(nameof(RoomStatus.Completed))]
+    [InlineData(nameof(RoomStatus.Archived))]
+    public async Task PostMessageAsync_ThrowsRoomReadOnlyException_WhenRoomTerminal(string status)
+    {
+        await SeedRoomAsync("room-done", status: status);
+        var svc = CreateService();
+
+        var ex = await Assert.ThrowsAsync<RoomReadOnlyException>(() =>
+            svc.PostMessageAsync(new PostMessageRequest(
+                "room-done", "planner-1", "should be rejected", MessageKind.Response)));
+
+        Assert.Equal("room-done", ex.RoomId);
+        Assert.Equal(status, ex.Status);
+
+        // No message should have been persisted
+        var db = await GetDbAsync();
+        Assert.Equal(0, await db.Messages.CountAsync(m => m.RoomId == "room-done"));
+    }
+
+    [Theory]
+    [InlineData(nameof(RoomStatus.Completed))]
+    [InlineData(nameof(RoomStatus.Archived))]
+    public async Task PostHumanMessageAsync_ThrowsRoomReadOnlyException_WhenRoomTerminal(string status)
+    {
+        await SeedRoomAsync("room-done", status: status);
+        var svc = CreateService();
+
+        var ex = await Assert.ThrowsAsync<RoomReadOnlyException>(() =>
+            svc.PostHumanMessageAsync("room-done", "human input"));
+
+        Assert.Equal(status, ex.Status);
+
+        var db = await GetDbAsync();
+        Assert.Equal(0, await db.Messages.CountAsync(m => m.RoomId == "room-done"));
+    }
+
+    [Fact]
+    public async Task PostSystemMessageAsync_StillSucceeds_WhenRoomCompleted()
+    {
+        // System messages annotate terminal rooms (e.g. "Sprint completed; room closed").
+        // These must remain unblocked or the lifecycle event itself can't be recorded.
+        await SeedRoomAsync("room-done", status: nameof(RoomStatus.Completed));
+        var svc = CreateService();
+
+        await svc.PostSystemMessageAsync("room-done", "Sprint completed.");
+
+        var db = await GetDbAsync();
+        var msg = await db.Messages.SingleAsync(m => m.RoomId == "room-done");
+        Assert.Equal("system", msg.SenderId);
+        Assert.Equal("Sprint completed.", msg.Content);
+    }
+
+    [Theory]
+    [InlineData(nameof(RoomStatus.Idle))]
+    [InlineData(nameof(RoomStatus.Active))]
+    [InlineData(nameof(RoomStatus.AttentionRequired))]
+    public async Task PostMessageAsync_StillSucceeds_WhenRoomNotTerminal(string status)
+    {
+        await SeedRoomAsync("room-live", status: status);
+        var svc = CreateService();
+
+        var envelope = await svc.PostMessageAsync(new PostMessageRequest(
+            "room-live", "planner-1", "ok", MessageKind.Response));
+
+        Assert.NotNull(envelope);
+    }
 }
