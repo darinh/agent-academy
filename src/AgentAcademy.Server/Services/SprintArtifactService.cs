@@ -204,6 +204,10 @@ public sealed class SprintArtifactService : ISprintArtifactService
                     RequireList(sr.Delivered, "Delivered");
                     RequireList(sr.Learnings, "Learnings");
                     break;
+
+                case ArtifactType.SelfEvaluationReport:
+                    ValidateSelfEvaluationReport(content, options);
+                    break;
             }
         }
         catch (JsonException ex)
@@ -211,6 +215,193 @@ public sealed class SprintArtifactService : ISprintArtifactService
             throw new ArgumentException(
                 $"Invalid JSON for artifact type '{type}': {ex.Message}", nameof(content), ex);
         }
+    }
+
+    /// <summary>
+    /// Static (parse-level) validation for <see cref="ArtifactType.SelfEvaluationReport"/>
+    /// content. Enforces the rules from
+    /// <c>specs/100-product-vision/p1-4-self-evaluation-design.md §3.2</c> that
+    /// can be checked without a database lookup:
+    /// <list type="bullet">
+    /// <item>Required scalars (<c>Attempt &gt;= 1</c>) and <c>Items</c> non-null/non-empty.</item>
+    /// <item>Per-item required fields (<c>TaskId</c>, <c>SuccessCriteria</c>, <c>Evidence</c>).</item>
+    /// <item>No duplicate <c>TaskId</c>s.</item>
+    /// <item>Every non-PASS item has a non-empty <c>FixPlan</c>.</item>
+    /// <item><c>OverallVerdict</c> matches the per-item rollup
+    ///     (<c>AllPass</c> iff every item PASS; else <c>AnyFail</c> if any FAIL;
+    ///     else <c>Unverified</c>).</item>
+    /// </list>
+    /// DB-aware checks (item TaskIds match the sprint's non-cancelled task set,
+    /// SuccessCriteria copied verbatim from each TaskEntity) are NOT enforced
+    /// here — they live in the verdict path added by the next P1.4 PR, which
+    /// already needs the sprint context to compute the verdict.
+    /// </summary>
+    private static void ValidateSelfEvaluationReport(string content, JsonSerializerOptions options)
+    {
+        // Two-stage parse: first verify required JSON properties are PRESENT (not
+        // just successfully deserialized). System.Text.Json maps a missing enum
+        // field to numeric 0 (= PASS / AllPass here), which would let an agent
+        // silently submit a report with no Verdict and have it accepted as PASS.
+        // Catching presence at the JsonDocument level before model deserialization
+        // closes that loophole.
+        //
+        // Property lookups are case-INSENSITIVE to match the deserializer's
+        // PropertyNameCaseInsensitive=true contract (otherwise camelCase payloads
+        // that previously round-tripped would now be rejected as missing).
+        using (var doc = JsonDocument.Parse(content))
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                throw new ArgumentException(
+                    "SelfEvaluationReport content must be a JSON object.");
+
+            RequireJsonProperty(doc.RootElement, "Attempt");
+            RequireJsonProperty(doc.RootElement, "Items");
+            RequireJsonProperty(doc.RootElement, "OverallVerdict");
+
+            if (TryGetPropertyIgnoreCase(doc.RootElement, "Items", out var itemsElement)
+                && itemsElement.ValueKind == JsonValueKind.Array)
+            {
+                var idx = 0;
+                foreach (var rawItem in itemsElement.EnumerateArray())
+                {
+                    if (rawItem.ValueKind == JsonValueKind.Null)
+                        throw new ArgumentException(
+                            $"Items[{idx}] must be a JSON object, got null.");
+                    if (rawItem.ValueKind != JsonValueKind.Object)
+                        throw new ArgumentException(
+                            $"Items[{idx}] must be a JSON object, got {rawItem.ValueKind}.");
+
+                    RequireJsonProperty(rawItem, "TaskId", $"Items[{idx}].TaskId");
+                    RequireJsonProperty(rawItem, "SuccessCriteria", $"Items[{idx}].SuccessCriteria");
+                    RequireJsonProperty(rawItem, "Verdict", $"Items[{idx}].Verdict");
+                    RequireJsonProperty(rawItem, "Evidence", $"Items[{idx}].Evidence");
+                    idx++;
+                }
+            }
+        }
+
+        var report = JsonSerializer.Deserialize<SelfEvaluationReport>(content, options)
+            ?? throw new ArgumentException("Content deserialized to null.");
+
+        if (report.Attempt < 1)
+            throw new ArgumentException(
+                $"Required field 'Attempt' must be >= 1 (got {report.Attempt}).");
+
+        RequireList(report.Items, "Items");
+        if (report.Items.Count == 0)
+            throw new ArgumentException(
+                "Required field 'Items' must contain at least one entry — " +
+                "a sprint with zero non-cancelled tasks cannot be self-evaluated.");
+
+        var seenTaskIds = new HashSet<string>(StringComparer.Ordinal);
+        var anyFail = false;
+        var anyUnverified = false;
+        var allPass = true;
+
+        for (var i = 0; i < report.Items.Count; i++)
+        {
+            var item = report.Items[i];
+            // Defensive: STJ usually treats `null` array elements as null in the
+            // List<T> too. We've already screened `Items: [null]` at the
+            // JsonDocument layer, but keep this guard so any future deserialization
+            // path can't reach the field accesses below with a null item.
+            if (item is null)
+                throw new ArgumentException(
+                    $"Items[{i}] must be a non-null entry.");
+
+            RequireString(item.TaskId, $"Items[{i}].TaskId");
+            RequireString(item.SuccessCriteria, $"Items[{i}].SuccessCriteria");
+            RequireString(item.Evidence, $"Items[{i}].Evidence");
+
+            if (!seenTaskIds.Add(item.TaskId))
+                throw new ArgumentException(
+                    $"Duplicate TaskId '{item.TaskId}' in Items — each non-cancelled task " +
+                    "must appear exactly once.");
+
+            switch (item.Verdict)
+            {
+                case SelfEvaluationVerdict.PASS:
+                    break;
+                case SelfEvaluationVerdict.FAIL:
+                    anyFail = true;
+                    allPass = false;
+                    if (string.IsNullOrWhiteSpace(item.FixPlan))
+                        throw new ArgumentException(
+                            $"Items[{i}].FixPlan is required when Verdict is FAIL.");
+                    break;
+                case SelfEvaluationVerdict.UNVERIFIED:
+                    anyUnverified = true;
+                    allPass = false;
+                    if (string.IsNullOrWhiteSpace(item.FixPlan))
+                        throw new ArgumentException(
+                            $"Items[{i}].FixPlan is required when Verdict is UNVERIFIED.");
+                    break;
+                default:
+                    throw new ArgumentException(
+                        $"Items[{i}].Verdict has unknown value '{item.Verdict}'.");
+            }
+        }
+
+        var expected = allPass
+            ? SelfEvaluationOverallVerdict.AllPass
+            : (anyFail
+                ? SelfEvaluationOverallVerdict.AnyFail
+                : SelfEvaluationOverallVerdict.Unverified);
+
+        // Defensive: anyUnverified is consumed by the rollup-without-FAIL branch.
+        // Reference it so analyzers don't flag it as unused if logic is later refactored.
+        _ = anyUnverified;
+
+        if (report.OverallVerdict != expected)
+            throw new ArgumentException(
+                $"OverallVerdict mismatch: rollup of Items expects '{expected}' but report " +
+                $"declares '{report.OverallVerdict}'. The agent cannot disagree with the " +
+                "computed rollup.");
+    }
+
+    private static void RequireJsonProperty(
+        JsonElement element, string propertyName, string? displayName = null)
+    {
+        if (!TryGetPropertyIgnoreCase(element, propertyName, out var value)
+            || value.ValueKind == JsonValueKind.Undefined
+            || value.ValueKind == JsonValueKind.Null)
+        {
+            throw new ArgumentException(
+                $"Required field '{displayName ?? propertyName}' is missing or null.");
+        }
+    }
+
+    /// <summary>
+    /// Case-insensitive variant of <see cref="JsonElement.TryGetProperty(string, out JsonElement)"/>.
+    /// Matches the deserializer's <c>PropertyNameCaseInsensitive = true</c> contract so
+    /// that camelCase payloads (e.g. <c>attempt</c>, <c>items</c>, <c>overallVerdict</c>)
+    /// that round-trip through deserialization also pass the presence pre-check.
+    /// </summary>
+    private static bool TryGetPropertyIgnoreCase(
+        JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            value = default;
+            return false;
+        }
+
+        // Fast path: exact case match (the canonical PascalCase the agents are
+        // instructed to emit). Avoids enumerating properties on the hot path.
+        if (element.TryGetProperty(propertyName, out value))
+            return true;
+
+        foreach (var prop in element.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = prop.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private static void RequireString(string? value, string fieldName)

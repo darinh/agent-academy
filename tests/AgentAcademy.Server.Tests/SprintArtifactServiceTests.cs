@@ -871,4 +871,434 @@ public sealed class SprintArtifactServiceTests : IDisposable
         Assert.NotNull(loaded);
         Assert.Equal(content, loaded.Content);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SelfEvaluationReport — Static (parse-level) validation
+    // (P1.4 foundation — DB-aware checks live in the verdict path PR)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static string SelfEvalReportJson(
+        int attempt = 1,
+        SelfEvaluationOverallVerdict overall = SelfEvaluationOverallVerdict.AllPass,
+        params SelfEvaluationItem[] items)
+    {
+        return JsonSerializer.Serialize(new SelfEvaluationReport(
+            attempt, items.ToList(), overall, Notes: null));
+    }
+
+    private static SelfEvaluationItem PassItem(string taskId = "t1", string crit = "criterion") =>
+        new(taskId, crit, SelfEvaluationVerdict.PASS, "evidence-line", FixPlan: null);
+
+    private static SelfEvaluationItem FailItem(string taskId = "t1", string crit = "criterion") =>
+        new(taskId, crit, SelfEvaluationVerdict.FAIL, "evidence-line", "fix the thing");
+
+    private static SelfEvaluationItem UnverifiedItem(string taskId = "t1", string crit = "criterion") =>
+        new(taskId, crit, SelfEvaluationVerdict.UNVERIFIED, "partial evidence", "verify by running X");
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_AllPass_RoundTrips()
+    {
+        var sprint = AddActiveSprint();
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1"), PassItem("t2", "another criterion") });
+
+        var artifact = await _sut.StoreArtifactAsync(
+            sprint.Id, "Implementation", "SelfEvaluationReport", content);
+
+        _db.ChangeTracker.Clear();
+        var loaded = await _db.SprintArtifacts.FindAsync(artifact.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal(content, loaded.Content);
+        Assert.Equal("SelfEvaluationReport", loaded.Type);
+        Assert.Equal("Implementation", loaded.Stage);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_AnyFail_RoundTrips()
+    {
+        var sprint = AddActiveSprint();
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AnyFail,
+            items: new[] { PassItem("t1"), FailItem("t2", "fail criterion") });
+
+        var artifact = await _sut.StoreArtifactAsync(
+            sprint.Id, "Implementation", "SelfEvaluationReport", content);
+
+        Assert.NotNull(artifact);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_Unverified_RoundTrips()
+    {
+        var sprint = AddActiveSprint();
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.Unverified,
+            items: new[] { PassItem("t1"), UnverifiedItem("t2", "unverified criterion") });
+
+        var artifact = await _sut.StoreArtifactAsync(
+            sprint.Id, "Implementation", "SelfEvaluationReport", content);
+
+        Assert.NotNull(artifact);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_InvalidJson_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", "{not json"));
+        Assert.Contains("Invalid JSON", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_AttemptZero_Throws()
+    {
+        var content = SelfEvalReportJson(attempt: 0, items: PassItem());
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Attempt", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_NegativeAttempt_Throws()
+    {
+        var content = SelfEvalReportJson(attempt: -1, items: PassItem());
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Attempt", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_NullItems_Throws()
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            Attempt = 1,
+            Items = (object?)null,
+            OverallVerdict = "AllPass",
+            Notes = (string?)null,
+        });
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Items", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_EmptyItems_Throws()
+    {
+        var content = SelfEvalReportJson(items: Array.Empty<SelfEvaluationItem>());
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("at least one entry", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("TaskId")]
+    [InlineData("SuccessCriteria")]
+    [InlineData("Evidence")]
+    public void ValidateSelfEvalReport_MissingItemField_Throws(string field)
+    {
+        var item = new SelfEvaluationItem(
+            TaskId: field == "TaskId" ? "" : "t1",
+            SuccessCriteria: field == "SuccessCriteria" ? "" : "criterion",
+            Verdict: SelfEvaluationVerdict.PASS,
+            Evidence: field == "Evidence" ? "" : "evidence",
+            FixPlan: null);
+        var content = SelfEvalReportJson(items: item);
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains(field, ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_DuplicateTaskId_Throws()
+    {
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1"), PassItem("t1", "different criterion") });
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Duplicate TaskId", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_FailWithoutFixPlan_Throws()
+    {
+        var item = new SelfEvaluationItem(
+            "t1", "criterion", SelfEvaluationVerdict.FAIL, "evidence", FixPlan: null);
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AnyFail, items: item);
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("FixPlan", ex.Message);
+        Assert.Contains("FAIL", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_FailWithEmptyFixPlan_Throws()
+    {
+        var item = new SelfEvaluationItem(
+            "t1", "criterion", SelfEvaluationVerdict.FAIL, "evidence", FixPlan: "   ");
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AnyFail, items: item);
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("FixPlan", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_UnverifiedWithoutFixPlan_Throws()
+    {
+        var item = new SelfEvaluationItem(
+            "t1", "criterion", SelfEvaluationVerdict.UNVERIFIED, "evidence", FixPlan: null);
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.Unverified, items: item);
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("FixPlan", ex.Message);
+        Assert.Contains("UNVERIFIED", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_RollupAllPass_DeclaredAnyFail_Throws()
+    {
+        // Items are all PASS but report claims AnyFail — agent cannot lie about rollup.
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AnyFail,
+            items: new[] { PassItem("t1"), PassItem("t2", "another") });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("OverallVerdict mismatch", ex.Message);
+        Assert.Contains("AllPass", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_RollupAnyFail_DeclaredAllPass_Throws()
+    {
+        // One FAIL but report claims AllPass.
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1"), FailItem("t2", "criterion") });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("OverallVerdict mismatch", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_RollupUnverified_DeclaredAllPass_Throws()
+    {
+        // No FAILs but at least one UNVERIFIED → must be Unverified, not AllPass.
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1"), UnverifiedItem("t2", "criterion") });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("OverallVerdict mismatch", ex.Message);
+        Assert.Contains("Unverified", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_RollupUnverified_DeclaredAnyFail_Throws()
+    {
+        // No FAILs but at least one UNVERIFIED → must be Unverified, not AnyFail.
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AnyFail,
+            items: new[] { PassItem("t1"), UnverifiedItem("t2", "criterion") });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("OverallVerdict mismatch", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_RollupAnyFailDominatesUnverified_AcceptsAnyFail()
+    {
+        // Mixed FAIL + UNVERIFIED → AnyFail (FAIL dominates).
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AnyFail,
+            items: new[]
+            {
+                PassItem("t1"),
+                FailItem("t2", "fail criterion"),
+                UnverifiedItem("t3", "unverified criterion"),
+            });
+
+        // Should NOT throw — AnyFail is correct when FAIL is present.
+        SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_MissingOverallVerdictField_Throws()
+    {
+        // Adversarial review (codex 2026-04-25): omitting OverallVerdict from the
+        // JSON would silently default to enum 0 (= AllPass) and pass the rollup
+        // check if all items are PASS. Defeats the no-lying guarantee.
+        var content = JsonSerializer.Serialize(new
+        {
+            Attempt = 1,
+            Items = new[] { new { TaskId = "t1", SuccessCriteria = "c", Verdict = "PASS", Evidence = "e", FixPlan = (string?)null } },
+            // OverallVerdict intentionally omitted
+        });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("OverallVerdict", ex.Message);
+        Assert.Contains("missing", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_NullOverallVerdictField_Throws()
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            Attempt = 1,
+            Items = new[] { new { TaskId = "t1", SuccessCriteria = "c", Verdict = "PASS", Evidence = "e", FixPlan = (string?)null } },
+            OverallVerdict = (string?)null,
+        });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("OverallVerdict", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_MissingItemVerdictField_Throws()
+    {
+        // Same loophole at item level: omitted Verdict defaults to PASS silently.
+        var content = JsonSerializer.Serialize(new
+        {
+            Attempt = 1,
+            Items = new[] { new { TaskId = "t1", SuccessCriteria = "c", Evidence = "e" } },
+            OverallVerdict = "AllPass",
+        });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Verdict", ex.Message);
+        Assert.Contains("missing", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_MissingAttemptField_Throws()
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            Items = new[] { new { TaskId = "t1", SuccessCriteria = "c", Verdict = "PASS", Evidence = "e", FixPlan = (string?)null } },
+            OverallVerdict = "AllPass",
+        });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Attempt", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_NullItemElement_Throws()
+    {
+        // Adversarial review (codex 2026-04-25): Items: [null] would crash with
+        // NullReferenceException instead of returning a controlled validation error.
+        var content = "{ \"Attempt\": 1, \"Items\": [null], \"OverallVerdict\": \"AllPass\" }";
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Items[0]", ex.Message);
+        Assert.Contains("null", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_NonObjectRoot_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", "[]"));
+        Assert.Contains("JSON object", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_NonObjectItem_Throws()
+    {
+        var content = "{ \"Attempt\": 1, \"Items\": [\"not-an-object\"], \"OverallVerdict\": \"AllPass\" }";
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        Assert.Contains("Items[0]", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_ItemsAsObject_Throws()
+    {
+        // Round-2 review (codex): if Items is an object instead of array, the
+        // pre-pass should still produce a controlled error, not crash.
+        var content = "{ \"Attempt\": 1, \"Items\": {\"foo\":1}, \"OverallVerdict\": \"AllPass\" }";
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+        // Either rejected at JsonDocument item-check (skipped because not array)
+        // and fails downstream at deserialize→Items list check, or fails directly.
+        Assert.IsType<ArgumentException>(ex);
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_ItemsAsScalar_Throws()
+    {
+        var content = "{ \"Attempt\": 1, \"Items\": 42, \"OverallVerdict\": \"AllPass\" }";
+
+        Assert.Throws<ArgumentException>(() =>
+            SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content));
+    }
+
+    [Fact]
+    public void ValidateSelfEvalReport_CamelCasePayload_RoundTrips()
+    {
+        // Round-2 review (codex): the existing JsonSerializerOptions in
+        // ValidateArtifactContent uses PropertyNameCaseInsensitive=true, so
+        // camelCase payloads (the JS/TS convention) must continue to round-trip.
+        // Regression-guard: the JsonDocument pre-pass is also case-insensitive.
+        var content = JsonSerializer.Serialize(new
+        {
+            attempt = 1,
+            items = new[]
+            {
+                new { taskId = "t1", successCriteria = "c", verdict = "PASS", evidence = "e", fixPlan = (string?)null },
+            },
+            overallVerdict = "AllPass",
+            notes = (string?)null,
+        });
+
+        // Should NOT throw — case-insensitive match on every required field.
+        SprintArtifactService.ValidateArtifactContent("SelfEvaluationReport", content);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_BadJson_RejectedAtStore()
+    {
+        // Defence-in-depth: malformed JSON reaches StoreArtifactAsync from a hostile
+        // agent and must be rejected before persistence.
+        var sprint = AddActiveSprint();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", "{ \"Attempt\": 1, items: ["));
+
+        Assert.Empty(_db.SprintArtifacts.ToList());
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_RollupMismatch_RejectedAtStore()
+    {
+        var sprint = AddActiveSprint();
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: FailItem("t1"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", content));
+
+        Assert.Empty(_db.SprintArtifacts.ToList());
+    }
 }
