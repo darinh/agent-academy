@@ -1086,4 +1086,138 @@ public class SprintServiceTests : IDisposable
             .FirstOrDefaultAsync();
         Assert.NotNull(stored);
     }
+
+    // ── IRoomLifecycleService synchronous coupling (P1.8 race fix) ──────
+
+    [Fact]
+    public async Task CompleteSprint_InvokesRoomLifecycleSynchronously_BeforeAutoStart()
+    {
+        // The contract: when a sprint completes, its workspace rooms must be
+        // marked Completed BEFORE TryAutoStartNextSprintAsync runs. Otherwise
+        // the next sprint's freshly-created main room could be swept up as
+        // collateral damage by a deferred lifecycle pass.
+        var lifecycle = Substitute.For<AgentAcademy.Server.Services.Contracts.IRoomLifecycleService>();
+        var settings = new SystemSettingsService(_db);
+        await settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+
+        var svc = new SprintService(
+            _db, new ActivityBroadcaster(), settings, NullLogger<SprintService>.Instance,
+            kickoff: null, roomLifecycle: lifecycle);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "FinalSynthesis";
+        await _db.SaveChangesAsync();
+
+        await svc.CompleteSprintAsync(sprint.Id, force: true);
+
+        await lifecycle.Received(1).MarkSprintRoomsCompletedAsync(TestWorkspace, sprint.Id);
+
+        // After completion + auto-start, the next sprint exists.
+        var sprints = await _db.Sprints
+            .Where(s => s.WorkspacePath == TestWorkspace)
+            .OrderBy(s => s.Number)
+            .ToListAsync();
+        Assert.Equal(2, sprints.Count);
+        Assert.Equal("Completed", sprints[0].Status);
+        Assert.Equal("Active", sprints[1].Status);
+    }
+
+    [Fact]
+    public async Task CancelSprint_InvokesRoomLifecycle()
+    {
+        var lifecycle = Substitute.For<AgentAcademy.Server.Services.Contracts.IRoomLifecycleService>();
+        var svc = new SprintService(
+            _db, new ActivityBroadcaster(), _settings, NullLogger<SprintService>.Instance,
+            kickoff: null, roomLifecycle: lifecycle);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+
+        await svc.CancelSprintAsync(sprint.Id);
+
+        await lifecycle.Received(1).MarkSprintRoomsCompletedAsync(TestWorkspace, sprint.Id);
+    }
+
+    [Fact]
+    public async Task TimeOutSprint_InvokesRoomLifecycle()
+    {
+        var lifecycle = Substitute.For<AgentAcademy.Server.Services.Contracts.IRoomLifecycleService>();
+        var svc = new SprintService(
+            _db, new ActivityBroadcaster(), _settings, NullLogger<SprintService>.Instance,
+            kickoff: null, roomLifecycle: lifecycle);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+
+        await svc.TimeOutSprintAsync(sprint.Id);
+
+        await lifecycle.Received(1).MarkSprintRoomsCompletedAsync(TestWorkspace, sprint.Id);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_AutoStart_EnsuresFreshDefaultRoomBeforeCreate()
+    {
+        // After the current sprint's rooms are frozen, auto-start has to
+        // provision a fresh workspace main room. Otherwise CreateSprintAsync
+        // runs against a workspace with no writable rooms and the new sprint
+        // is inert. Adversarial-review round-2 finding (Issue 2).
+        var lifecycle = Substitute.For<AgentAcademy.Server.Services.Contracts.IRoomLifecycleService>();
+        var workspaceRooms = Substitute.For<AgentAcademy.Server.Services.Contracts.IWorkspaceRoomService>();
+        workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(Arg.Any<string>())
+            .Returns("fresh-main-room");
+
+        var settings = new SystemSettingsService(_db);
+        await settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+
+        var svc = new SprintService(
+            _db, new ActivityBroadcaster(), settings, NullLogger<SprintService>.Instance,
+            kickoff: null, roomLifecycle: lifecycle, workspaceRooms: workspaceRooms);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "FinalSynthesis";
+        await _db.SaveChangesAsync();
+
+        await svc.CompleteSprintAsync(sprint.Id, force: true);
+
+        // Called exactly once — during the auto-start path for the next sprint.
+        await workspaceRooms.Received(1).EnsureDefaultRoomForWorkspaceAsync(TestWorkspace);
+
+        // The freeze still ran for the completed sprint.
+        await lifecycle.Received(1).MarkSprintRoomsCompletedAsync(TestWorkspace, sprint.Id);
+
+        // And the next sprint exists.
+        var nextActive = await _db.Sprints
+            .Where(s => s.WorkspacePath == TestWorkspace && s.Status == "Active")
+            .FirstOrDefaultAsync();
+        Assert.NotNull(nextActive);
+        Assert.Equal(2, nextActive!.Number);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_RoomLifecycleThrows_RollsBackSprintCompletion()
+    {
+        // Atomic contract: when the room freeze fails, the sprint state change
+        // must roll back. Otherwise we get the "Completed sprint, Active
+        // rooms" inconsistency that lets messages keep flowing into a sprint
+        // the UI presents as finished. Adversarial-review round-2 finding.
+        var lifecycle = Substitute.For<AgentAcademy.Server.Services.Contracts.IRoomLifecycleService>();
+        lifecycle
+            .MarkSprintRoomsCompletedAsync(Arg.Any<string>(), Arg.Any<string?>())
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var svc = new SprintService(
+            _db, new ActivityBroadcaster(), _settings, NullLogger<SprintService>.Instance,
+            kickoff: null, roomLifecycle: lifecycle);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "FinalSynthesis";
+        await _db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.CompleteSprintAsync(sprint.Id, force: true));
+
+        // Reload from the DB to see the persisted state (EF may still have the
+        // in-memory entity marked Completed, but the transaction rolled back).
+        _db.ChangeTracker.Clear();
+        var reloaded = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.Equal("Active", reloaded!.Status);
+    }
 }

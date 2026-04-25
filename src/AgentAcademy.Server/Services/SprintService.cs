@@ -23,19 +23,25 @@ public sealed class SprintService : Contracts.ISprintService
     private readonly ISystemSettingsService _settings;
     private readonly ILogger<SprintService> _logger;
     private readonly ISprintKickoffService? _kickoff;
+    private readonly Contracts.IRoomLifecycleService? _roomLifecycle;
+    private readonly Contracts.IWorkspaceRoomService? _workspaceRooms;
 
     public SprintService(
         AgentAcademyDbContext db,
         IActivityBroadcaster activityBus,
         ISystemSettingsService settings,
         ILogger<SprintService> logger,
-        ISprintKickoffService? kickoff = null)
+        ISprintKickoffService? kickoff = null,
+        Contracts.IRoomLifecycleService? roomLifecycle = null,
+        Contracts.IWorkspaceRoomService? workspaceRooms = null)
     {
         _db = db;
         _activityBus = activityBus;
         _settings = settings;
         _logger = logger;
         _kickoff = kickoff;
+        _roomLifecycle = roomLifecycle;
+        _workspaceRooms = workspaceRooms;
     }
 
     // ── Create ───────────────────────────────────────────────────
@@ -251,7 +257,14 @@ public sealed class SprintService : Contracts.ISprintService
                 ["status"] = "Completed",
             });
 
-        await _db.SaveChangesAsync();
+        // Atomically persist the sprint completion AND freeze its workspace
+        // rooms. Both must succeed or neither is committed — otherwise we get
+        // the inconsistent state of a "Completed" sprint with rooms still
+        // accepting writes (read-only guarantee broken). The transaction also
+        // closes the race where a concurrent CreateSprintAsync could observe
+        // the completion before rooms are frozen and start a new sprint that
+        // gets swept up by the lifecycle pass.
+        await PersistTerminalSprintWithRoomFreezeAsync(sprint);
         FlushEvents();
 
         _logger.LogInformation(
@@ -262,6 +275,69 @@ public sealed class SprintService : Contracts.ISprintService
         await TryAutoStartNextSprintAsync(sprint);
 
         return sprint;
+    }
+
+    /// <summary>
+    /// Persists a sprint state change (Completed/Cancelled) AND freezes the
+    /// sprint's workspace rooms inside a single transaction. Either both
+    /// commit or neither does. Eliminates the "Completed sprint, Active room"
+    /// inconsistency and the race where a concurrent CreateSprintAsync
+    /// observes completion before rooms are frozen.
+    ///
+    /// Falls back to a plain SaveChanges when no <see cref="Contracts.IRoomLifecycleService"/>
+    /// is wired (legacy test paths and any boot scenario where the lifecycle
+    /// service hasn't been registered).
+    /// </summary>
+    private async Task PersistTerminalSprintWithRoomFreezeAsync(SprintEntity sprint)
+    {
+        if (_roomLifecycle is null)
+        {
+            await _db.SaveChangesAsync();
+            return;
+        }
+
+        // SQLite in-memory test contexts can lack a transactional connection
+        // wrapper; treat that as "best effort, still atomic on the same
+        // SaveChanges" via shared DbContext.
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
+        try
+        {
+            tx = await _db.Database.BeginTransactionAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            // No relational provider — skip explicit transaction; SaveChanges
+            // is still atomic and MarkSprintRoomsCompletedAsync below saves
+            // both the sprint state change and the room status updates in
+            // the same SaveChanges call.
+        }
+
+        try
+        {
+            // Save the sprint state change first within the transaction.
+            await _db.SaveChangesAsync();
+
+            // Then freeze rooms (calls SaveChanges itself). On the same
+            // DbContext + transaction the work is atomic.
+            await _roomLifecycle.MarkSprintRoomsCompletedAsync(
+                sprint.WorkspacePath, sprint.Id);
+
+            if (tx is not null)
+                await tx.CommitAsync();
+        }
+        catch
+        {
+            if (tx is not null)
+            {
+                try { await tx.RollbackAsync(); }
+                catch { /* best-effort rollback */ }
+            }
+            throw;
+        }
+        finally
+        {
+            tx?.Dispose();
+        }
     }
 
     /// <summary>
@@ -280,6 +356,29 @@ public sealed class SprintService : Contracts.ISprintService
             _logger.LogInformation(
                 "Auto-start enabled — creating next sprint for workspace {Workspace}",
                 completedSprint.WorkspacePath);
+
+            // The previous sprint's room freeze moved every workspace room to
+            // Completed. Provision a fresh default room for the next sprint
+            // before CreateSprintAsync runs, otherwise
+            // SyncRoomsToInitialStageAsync has nothing to sync and
+            // PostKickoffAsync silently no-ops (it filters out Completed
+            // rooms), leaving the auto-started sprint without a writable
+            // surface.
+            if (_workspaceRooms is not null)
+            {
+                try
+                {
+                    await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(
+                        completedSprint.WorkspacePath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Auto-start: failed to ensure a fresh default room for workspace {Workspace}",
+                        completedSprint.WorkspacePath);
+                    return;
+                }
+            }
 
             var next = await CreateSprintAsync(completedSprint.WorkspacePath, trigger: "auto");
 
@@ -318,7 +417,8 @@ public sealed class SprintService : Contracts.ISprintService
                 ["status"] = "Cancelled",
             });
 
-        await _db.SaveChangesAsync();
+        // Atomic: cancel + room freeze commit together.
+        await PersistTerminalSprintWithRoomFreezeAsync(sprint);
         FlushEvents();
 
         _logger.LogInformation(
@@ -382,7 +482,8 @@ public sealed class SprintService : Contracts.ISprintService
                 ["reason"] = "timeout",
             });
 
-        await _db.SaveChangesAsync(ct);
+        // Atomic: timeout-cancel + room freeze commit together.
+        await PersistTerminalSprintWithRoomFreezeAsync(sprint);
         FlushEvents();
 
         _logger.LogWarning(

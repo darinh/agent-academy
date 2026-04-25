@@ -53,10 +53,13 @@ public sealed class WorkspaceRoomService : IWorkspaceRoomService
         // Phase 2: Check if workspace already has a room (including an adopted "main").
         // Prefer workspace-specific rooms over the legacy default to avoid conflicts
         // when both exist (e.g., after a partial repair).
-        // Exclude archived rooms — they should not be resurrected as the workspace default.
+        // Exclude archived AND completed rooms — they should not be resurrected as
+        // the workspace default. After a sprint completes its room is frozen, and
+        // the next sprint must get a fresh main room.
         var existingForWorkspace = await _db.Rooms
             .Where(r => r.WorkspacePath == workspacePath
                  && r.Status != nameof(RoomStatus.Archived)
+                 && r.Status != nameof(RoomStatus.Completed)
                  && (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")))
             .OrderBy(r => r.Id == _catalog.DefaultRoomId ? 1 : 0)
             .FirstOrDefaultAsync();
@@ -83,12 +86,37 @@ public sealed class WorkspaceRoomService : IWorkspaceRoomService
         var candidateId = $"{slug}-main";
 
         var collision = await _db.Rooms.FindAsync(candidateId);
-        if (collision is not null && collision.WorkspacePath != workspacePath)
+        if (collision is not null)
         {
-            var hash = Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(workspacePath)))[..8].ToLowerInvariant();
-            candidateId = $"{slug}-{hash}-main";
+            // Two cases for collision:
+            //   (a) Another workspace already adopted "{slug}-main" — disambiguate
+            //       with a workspace-derived hash so the same workspace replaying
+            //       this code path always picks the same ID.
+            //   (b) THIS workspace already has a "{slug}-main" but it's terminal
+            //       (Completed/Archived) — the next sprint needs a fresh main.
+            //       Use a Guid-suffixed ID so we don't collide with the historical
+            //       row.  Idempotency is maintained because the lookup above
+            //       (`existingForWorkspace`) returns any non-terminal main first
+            //       and we never get here.
+            string suffix;
+            if (collision.WorkspacePath != workspacePath)
+            {
+                suffix = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(
+                        System.Text.Encoding.UTF8.GetBytes(workspacePath)))[..8].ToLowerInvariant();
+            }
+            else
+            {
+                suffix = Guid.NewGuid().ToString("N")[..8];
+            }
+            candidateId = $"{slug}-{suffix}-main";
+
+            // Defensive: re-check the new candidate. Guid suffix should be unique
+            // but a workspace-hash suffix could re-collide if another workspace
+            // with the same slug+hash exists (impossibly unlikely, but cheap to
+            // verify).
+            if (await _db.Rooms.FindAsync(candidateId) is not null)
+                candidateId = $"{slug}-{Guid.NewGuid():N}-main"[..Math.Min(64, slug.Length + 38)];
         }
 
         var now = DateTime.UtcNow;

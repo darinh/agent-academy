@@ -196,6 +196,147 @@ public sealed class RoomLifecycleService : IRoomLifecycleService
 
     // ── Private Helpers ─────────────────────────────────────────
 
+    /// <summary>
+    /// Marks every non-terminal room belonging to the given workspace as
+    /// Completed in response to a sprint completing or being cancelled.
+    /// Evacuates agents back to the workspace default room (including any
+    /// agents currently in a breakout that descends from one of the workspace's
+    /// rooms) and archives those breakout rooms. Idempotent.
+    /// </summary>
+    public async Task<int> MarkSprintRoomsCompletedAsync(string workspacePath, string? sprintId = null)
+    {
+        if (string.IsNullOrEmpty(workspacePath))
+            return 0;
+
+        var archivedStatus = nameof(RoomStatus.Archived);
+        var completedStatus = nameof(RoomStatus.Completed);
+
+        // Universe of non-archived rooms in this workspace, used to scope the
+        // breakout sweep. We include already-Completed rooms because
+        // SprintStageService.SyncWorkspaceRoomsToStageAsync flips rooms to
+        // Completed when the sprint reaches FinalSynthesis — by the time
+        // CompleteSprintAsync runs, parent rooms may already be terminal but
+        // their breakouts can still be Active and need archiving here.
+        var workspaceRoomIds = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath && r.Status != archivedStatus)
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        if (workspaceRoomIds.Count == 0)
+            return 0;
+
+        var workspaceRoomIdSet = workspaceRoomIds.ToHashSet(StringComparer.Ordinal);
+
+        // Subset that still needs status transition.
+        var roomsToTransition = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath
+                && r.Status != archivedStatus
+                && r.Status != completedStatus)
+            .ToListAsync();
+
+        // Every active descendant breakout — regardless of whether its parent
+        // room is still Active or already Completed.
+        var breakoutRooms = await _db.BreakoutRooms
+            .Where(b => workspaceRoomIdSet.Contains(b.ParentRoomId)
+                && b.Status != archivedStatus
+                && b.Status != completedStatus)
+            .ToListAsync();
+
+        if (roomsToTransition.Count == 0 && breakoutRooms.Count == 0)
+            return 0;
+
+        var breakoutRoomIds = breakoutRooms.Select(b => b.Id).ToHashSet(StringComparer.Ordinal);
+
+        // Lazy: only resolve the workspace default room if we actually have
+        // agents to relocate. This avoids the unsupported EF translation of
+        // EndsWith(string, StringComparison) running on workspaces with no
+        // active participants (the common case at sprint completion).
+        string? cachedDefaultRoomId = null;
+        async Task<string> ResolveDefaultRoomAsync()
+            => cachedDefaultRoomId ??= await GetDefaultRoomForWorkspaceAsync(workspacePath);
+
+        var now = DateTime.UtcNow;
+        var transitioned = 0;
+
+        // Evacuate occupants of breakouts being archived even if their parent
+        // is already Completed (and therefore not in roomsToTransition).
+        if (breakoutRoomIds.Count > 0)
+        {
+            var breakoutOccupants = await _db.AgentLocations
+                .Where(l => l.BreakoutRoomId != null
+                    && breakoutRoomIds.Contains(l.BreakoutRoomId))
+                .ToListAsync();
+
+            if (breakoutOccupants.Count > 0)
+            {
+                var defaultRoomId = await ResolveDefaultRoomAsync();
+                foreach (var location in breakoutOccupants)
+                {
+                    location.RoomId = defaultRoomId;
+                    location.BreakoutRoomId = null;
+                    location.State = nameof(AgentState.Idle);
+                    location.UpdatedAt = now;
+
+                    Publish(ActivityEventType.PresenceUpdated, location.RoomId, location.AgentId, null,
+                        $"Agent {location.AgentId} evacuated from archived breakout (sprint completed)");
+                }
+            }
+        }
+
+        foreach (var room in roomsToTransition)
+        {
+            // Evacuate non-breakout participants — breakout occupants were
+            // handled above and would otherwise be moved twice.
+            var participants = await _db.AgentLocations
+                .Where(l => l.RoomId == room.Id && l.BreakoutRoomId == null)
+                .ToListAsync();
+
+            if (participants.Count > 0)
+            {
+                var defaultRoomId = await ResolveDefaultRoomAsync();
+                foreach (var location in participants)
+                {
+                    if (room.Id != defaultRoomId)
+                        location.RoomId = defaultRoomId;
+                    location.State = nameof(AgentState.Idle);
+                    location.UpdatedAt = now;
+
+                    Publish(ActivityEventType.PresenceUpdated, location.RoomId, location.AgentId, null,
+                        $"Agent {location.AgentId} evacuated from completed sprint room");
+                }
+            }
+
+            var oldStatus = room.Status;
+            room.Status = completedStatus;
+            room.UpdatedAt = now;
+            transitioned++;
+
+            Publish(ActivityEventType.RoomStatusChanged, room.Id, null, null,
+                $"Room '{room.Name}' marked Completed: {oldStatus} → {completedStatus} (sprint completed)");
+        }
+
+        // Archive descendant breakouts. Marked Archived (not Completed) to
+        // mirror the existing breakout close path in
+        // BreakoutRoomService.CloseBreakoutRoomAsync.
+        foreach (var breakout in breakoutRooms)
+        {
+            breakout.Status = archivedStatus;
+            breakout.CloseReason = BreakoutRoomCloseReason.Cancelled.ToString();
+            breakout.UpdatedAt = now;
+
+            Publish(ActivityEventType.RoomClosed, breakout.ParentRoomId, breakout.AssignedAgentId, null,
+                $"Breakout room '{breakout.Name}' archived (parent sprint completed)");
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Marked {Count} room(s) Completed and archived {BreakoutCount} breakout(s) for workspace '{Workspace}' (sprint {SprintId})",
+            transitioned, breakoutRooms.Count, workspacePath, sprintId ?? "(unspecified)");
+
+        return transitioned;
+    }
+
     private async Task<string?> GetActiveWorkspacePathAsync()
     {
         return await _db.Workspaces
@@ -232,11 +373,15 @@ public sealed class RoomLifecycleService : IRoomLifecycleService
 
     private async Task<string> GetDefaultRoomForWorkspaceAsync(string workspacePath)
     {
+        // EF Core's SQLite provider can't translate EndsWith(string, StringComparison.Ordinal),
+        // so we use the parameterless EndsWith (translated to LIKE 'pattern'). Room names
+        // like "Main Room" and "Collaboration Room" don't have case-ambiguous variants in
+        // practice, so the loss of Ordinal semantics is immaterial here.
         var workspaceDefaultRoom = await _db.Rooms
             .Where(r => r.WorkspacePath == workspacePath &&
                    (r.Name == _catalog.DefaultRoomName ||
-                    r.Name.EndsWith("Main Room", StringComparison.Ordinal) ||
-                    r.Name.EndsWith("Collaboration Room", StringComparison.Ordinal)))
+                    r.Name.EndsWith("Main Room") ||
+                    r.Name.EndsWith("Collaboration Room")))
             .Select(r => r.Id)
             .FirstOrDefaultAsync();
 

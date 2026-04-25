@@ -16,6 +16,13 @@ public sealed class MessageService : IMessageService
     private const int MaxRecentMessages = 200;
 
     /// <summary>
+    /// Room statuses that reject new agent and human messages. System messages
+    /// are still allowed (e.g. "Sprint completed; room closed").
+    /// </summary>
+    private static bool IsTerminalRoomStatus(string status) =>
+        status == nameof(RoomStatus.Completed) || status == nameof(RoomStatus.Archived);
+
+    /// <summary>
     /// Sender IDs that represent the human side of DM conversations.
     /// Both the direct human user and the consultant API share the same DM inbox.
     /// </summary>
@@ -60,6 +67,9 @@ public sealed class MessageService : IMessageService
 
         var room = await _db.Rooms.FindAsync(request.RoomId)
             ?? throw new InvalidOperationException($"Room '{request.RoomId}' not found");
+
+        if (IsTerminalRoomStatus(room.Status))
+            throw new RoomReadOnlyException(request.RoomId, room.Status);
 
         var agent = _catalog.Agents.FirstOrDefault(a => a.Id == request.SenderId)
             ?? throw new InvalidOperationException($"Agent '{request.SenderId}' not found in catalog");
@@ -127,6 +137,9 @@ public sealed class MessageService : IMessageService
 
         var room = await _db.Rooms.FindAsync(roomId)
             ?? throw new InvalidOperationException($"Room '{roomId}' not found");
+
+        if (IsTerminalRoomStatus(room.Status))
+            throw new RoomReadOnlyException(roomId, room.Status);
 
         var senderId = userId ?? "human";
         var senderName = userName ?? "Human";
