@@ -207,7 +207,7 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 
 | Item | Status | Started | Completed | Notes |
 |------|--------|---------|-----------|-------|
-| P1.1 | pending | — | — | |
+| P1.1 | in_progress | 2026-04-25 | — | Kickoff posts a system message in every active workspace room and wakes the orchestrator on `CreateSprintAsync` (manual / scheduled / auto-start paths). |
 | P1.2 | pending | — | — | Design doc required first |
 | P1.3 | pending | — | — | |
 | P1.4 | pending | — | — | Design doc required first |

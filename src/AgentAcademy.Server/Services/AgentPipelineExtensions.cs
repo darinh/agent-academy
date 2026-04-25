@@ -150,6 +150,11 @@ public static class AgentPipelineExtensions
         services.AddSingleton<IOrchestratorDispatchService>(sp => sp.GetRequiredService<OrchestratorDispatchService>());
         services.AddSingleton<AgentOrchestrator>();
         services.AddSingleton<IAgentOrchestrator>(sp => sp.GetRequiredService<AgentOrchestrator>());
+
+        // Sprint kickoff lives here (not in AddDomainServices) because it depends on
+        // IAgentOrchestrator, which is part of the agent pipeline registration.
+        services.AddScoped<SprintKickoffService>();
+        services.AddScoped<Contracts.ISprintKickoffService>(sp => sp.GetRequiredService<SprintKickoffService>());
         return services;
     }
 }
