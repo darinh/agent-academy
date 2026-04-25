@@ -48,6 +48,26 @@ public class SprintServiceTests : IDisposable
         _connection.Dispose();
     }
 
+    /// <summary>
+    /// Bypasses <see cref="SprintArtifactService"/> validation to seed an
+    /// AllPass <c>SelfEvaluationReport</c> for tests that just need the
+    /// Implementation→FinalSynthesis verdict gate to pass. Uses an empty JSON
+    /// object — the gate deserializes with default <see cref="SelfEvaluationOverallVerdict"/>=AllPass.
+    /// </summary>
+    private async Task SeedSelfEvalAllPassAsync(string sprintId)
+    {
+        _db.SprintArtifacts.Add(new SprintArtifactEntity
+        {
+            SprintId = sprintId,
+            Stage = "Implementation",
+            Type = "SelfEvaluationReport",
+            Content = "{}",
+            CreatedByAgentId = "test-agent",
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+    }
+
     // ── CreateSprintAsync ────────────────────────────────────────
 
     [Fact]
@@ -577,7 +597,8 @@ public class SprintServiceTests : IDisposable
         sprint = await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.Equal("Implementation", sprint.CurrentStage);
 
-        // Implementation → FinalSynthesis (no required artifact, no sign-off)
+        // Implementation → FinalSynthesis (now requires SelfEvaluationReport with AllPass verdict)
+        await SeedSelfEvalAllPassAsync(sprint.Id);
         sprint = await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.Equal("FinalSynthesis", sprint.CurrentStage);
     }
@@ -606,6 +627,7 @@ public class SprintServiceTests : IDisposable
         await _stageService.AdvanceStageAsync(sprint.Id); // Discussion → Validation
         await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
         await _stageService.AdvanceStageAsync(sprint.Id); // Validation → Implementation
+        await SeedSelfEvalAllPassAsync(sprint.Id);
         await _stageService.AdvanceStageAsync(sprint.Id); // Implementation → FinalSynthesis
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -708,6 +730,7 @@ public class SprintServiceTests : IDisposable
         await _stageService.AdvanceStageAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
         await _stageService.AdvanceStageAsync(sprint.Id);
+        await SeedSelfEvalAllPassAsync(sprint.Id);
         await _stageService.AdvanceStageAsync(sprint.Id);
 
         // Try to complete without SprintReport
@@ -729,6 +752,7 @@ public class SprintServiceTests : IDisposable
         await _stageService.AdvanceStageAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
         await _stageService.AdvanceStageAsync(sprint.Id);
+        await SeedSelfEvalAllPassAsync(sprint.Id);
         await _stageService.AdvanceStageAsync(sprint.Id);
 
         // Store SprintReport then complete

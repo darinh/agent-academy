@@ -64,9 +64,20 @@ internal sealed class SprintArtifactConfiguration : IEntityTypeConfiguration<Spr
             .HasDatabaseName("idx_sprint_artifacts_sprint_stage");
         entity.HasIndex(e => new { e.SprintId, e.Type })
             .HasDatabaseName("idx_sprint_artifacts_sprint_type");
+
+        // Append-only carve-out for SelfEvaluationReport (P1.4): each attempt
+        // produces a new row, so the (Sprint, Stage, Type) uniqueness invariant
+        // is enforced for every type EXCEPT SelfEvaluationReport. The covering
+        // (SprintId, Type, CreatedAt DESC) index below makes "latest report"
+        // lookups index-only.
         entity.HasIndex(e => new { e.SprintId, e.Stage, e.Type })
             .IsUnique()
+            .HasFilter("\"Type\" != 'SelfEvaluationReport'")
             .HasDatabaseName("idx_sprint_artifacts_sprint_stage_type_unique");
+
+        entity.HasIndex(e => new { e.SprintId, e.Type, e.CreatedAt })
+            .IsDescending(false, false, true)
+            .HasDatabaseName("idx_sprint_artifacts_sprint_type_created_desc");
     }
 }
 

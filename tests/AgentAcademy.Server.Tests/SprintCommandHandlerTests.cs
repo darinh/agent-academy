@@ -331,6 +331,12 @@ public class SprintCommandHandlerTests : IDisposable
         db.Tasks.Add(new TaskEntity { Id = "t-3", Title = "Unfinished", Description = "d",
             SuccessCriteria = "s", Status = "Active", RoomId = "prereq-room3",
             SprintId = sprint.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        // P1.4: human force=true skips prereqs but not the SelfEvaluationReport gate.
+        db.SprintArtifacts.Add(new SprintArtifactEntity
+        {
+            SprintId = sprint.Id, Stage = "Implementation", Type = "SelfEvaluationReport",
+            Content = "{}", CreatedByAgentId = "test", CreatedAt = DateTime.UtcNow,
+        });
         await db.SaveChangesAsync();
 
         var handler = new AdvanceStageHandler();

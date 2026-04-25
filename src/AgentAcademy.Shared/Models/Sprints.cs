@@ -75,7 +75,11 @@ public record SprintSnapshot(
     DateTime CreatedAt,
     DateTime? CompletedAt,
     DateTime? BlockedAt = null,
-    string? BlockReason = null);
+    string? BlockReason = null,
+    bool SelfEvaluationInFlight = false,
+    int SelfEvalAttempts = 0,
+    DateTime? LastSelfEvalAt = null,
+    string? LastSelfEvalVerdict = null);
 
 public record SprintArtifact(
     int Id,

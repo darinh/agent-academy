@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
@@ -26,6 +27,7 @@ public sealed class RoundContextLoader
     private readonly IRoomService _roomService;
     private readonly ISprintService _sprintService;
     private readonly ISprintArtifactService _artifactService;
+    private readonly SelfEvalOptions _selfEvalOptions;
     private readonly ILogger<RoundContextLoader> _logger;
 
     public RoundContextLoader(
@@ -34,13 +36,15 @@ public sealed class RoundContextLoader
         IRoomService roomService,
         ISprintService sprintService,
         ISprintArtifactService artifactService,
-        ILogger<RoundContextLoader> logger)
+        ILogger<RoundContextLoader> logger,
+        IOptions<SelfEvalOptions>? selfEvalOptions = null)
     {
         _specManager = specManager;
         _sessionQuery = sessionQuery;
         _roomService = roomService;
         _sprintService = sprintService;
         _artifactService = artifactService;
+        _selfEvalOptions = selfEvalOptions?.Value ?? new SelfEvalOptions();
         _logger = logger;
     }
 
@@ -114,7 +118,9 @@ public sealed class RoundContextLoader
         }
 
         var preamble = SprintPreambles.BuildPreamble(
-            sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
+            sprint.Number, sprint.CurrentStage, priorContext, overflowContent,
+            selfEvaluationInFlight: sprint.SelfEvaluationInFlight,
+            maxSelfEvalAttempts: _selfEvalOptions.MaxSelfEvalAttempts);
 
         return (preamble, sprint.CurrentStage);
     }

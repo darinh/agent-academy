@@ -159,6 +159,11 @@ public static class AgentPipelineExtensions
         services.AddOptions<SelfDriveOptions>()
             .Configure<Microsoft.Extensions.Configuration.IConfiguration>((opts, cfg) =>
                 cfg.GetSection(SelfDriveOptions.SectionName).Bind(opts));
+
+        // P1.4 self-eval verdict path — cap on submissions before auto-block.
+        services.AddOptions<SelfEvalOptions>()
+            .Configure<Microsoft.Extensions.Configuration.IConfiguration>((opts, cfg) =>
+                cfg.GetSection(SelfEvalOptions.SectionName).Bind(opts));
         services.AddSingleton<Contracts.ISelfDriveDecisionService, SelfDriveDecisionService>();
         services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());

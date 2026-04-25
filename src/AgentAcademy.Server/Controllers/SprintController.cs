@@ -549,7 +549,9 @@ public class SprintController : ControllerBase
             e.OverflowFromSprintId, e.AwaitingSignOff,
             e.PendingStage is not null ? pendingStage : null,
             e.SignOffRequestedAt, e.CreatedAt, e.CompletedAt,
-            e.BlockedAt, e.BlockReason);
+            e.BlockedAt, e.BlockReason,
+            e.SelfEvaluationInFlight, e.SelfEvalAttempts,
+            e.LastSelfEvalAt, e.LastSelfEvalVerdict);
     }
 
     /// <summary>

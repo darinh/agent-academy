@@ -963,6 +963,12 @@ export interface SprintSnapshot {
   signOffRequestedAt: string | null;
   createdAt: string;
   completedAt: string | null;
+  blockedAt?: string | null;
+  blockReason?: string | null;
+  selfEvaluationInFlight?: boolean;
+  selfEvalAttempts?: number;
+  lastSelfEvalAt?: string | null;
+  lastSelfEvalVerdict?: "AllPass" | "AnyFail" | "Unverified" | null;
 }
 
 export interface SprintArtifact {

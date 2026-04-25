@@ -104,10 +104,10 @@ public class SprintStageServiceTests : IDisposable
     }
 
     [Fact]
-    public void RequiredArtifactByStage_NoEntryForDiscussionOrImplementation()
+    public void RequiredArtifactByStage_NoEntryForDiscussion()
     {
         Assert.False(SprintStageService.RequiredArtifactByStage.ContainsKey("Discussion"));
-        Assert.False(SprintStageService.RequiredArtifactByStage.ContainsKey("Implementation"));
+        Assert.Equal("SelfEvaluationReport", SprintStageService.RequiredArtifactByStage["Implementation"]);
     }
 
     // ── GetStageIndex ───────────────────────────────────────────
@@ -443,6 +443,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_AdvancesDirectly()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
 
         var result = await _service.AdvanceStageAsync("sprint-1");
 
@@ -454,6 +455,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_PersistsActivityEvent()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
 
         await _service.AdvanceStageAsync("sprint-1");
 
@@ -864,7 +866,8 @@ public class SprintStageServiceTests : IDisposable
         var s6 = await _service.AdvanceStageAsync("sprint-1");
         Assert.Equal("Implementation", s6.CurrentStage);
 
-        // Implementation → no artifact, no sign-off
+        // Implementation → needs SelfEvaluationReport with AllPass verdict
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         var s7 = await _service.AdvanceStageAsync("sprint-1");
         Assert.Equal("FinalSynthesis", s7.CurrentStage);
 
@@ -882,6 +885,7 @@ public class SprintStageServiceTests : IDisposable
         await _service.AdvanceStageAsync("sprint-1"); // Discussion → Validation
         await SeedArtifactAsync("sprint-1", "Validation", "ValidationReport");
         await _service.AdvanceStageAsync("sprint-1"); // Validation → Implementation
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         await _service.AdvanceStageAsync("sprint-1"); // Implementation → FinalSynthesis
 
         var count = await _db.ActivityEvents.CountAsync();
@@ -1093,6 +1097,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_AllTasksCompleted_Advances()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Completed", "Task A");
         SeedTask("sprint-1", "Completed", "Task B");
 
@@ -1105,6 +1110,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_AllTasksCancelled_Advances()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Cancelled", "Task A");
         SeedTask("sprint-1", "Cancelled", "Task B");
 
@@ -1117,6 +1123,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_MixedTerminalStatuses_Advances()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Completed", "Task A");
         SeedTask("sprint-1", "Cancelled", "Task B");
 
@@ -1129,6 +1136,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_NoTasks_Advances()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
 
         var sprint = await _service.AdvanceStageAsync("sprint-1");
 
@@ -1139,6 +1147,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_ActiveTask_Throws()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Active", "Unfinished task");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -1153,6 +1162,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_QueuedTask_Throws()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Queued", "Queued task");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -1165,6 +1175,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_InReviewTask_Throws()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "InReview", "Reviewing task");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -1177,6 +1188,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_MultipleIncompleteTasks_ReportsCount()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Active", "Task A");
         SeedTask("sprint-1", "InReview", "Task B");
         SeedTask("sprint-1", "Completed", "Task C");
@@ -1191,6 +1203,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_Force_SkipsPrerequisites()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Active", "Unfinished task");
 
         var sprint = await _service.AdvanceStageAsync("sprint-1", force: true);
@@ -1202,6 +1215,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_Force_IncludesForcedInEvent()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         SeedTask("sprint-1", "Active", "Unfinished task");
 
         await _service.AdvanceStageAsync("sprint-1", force: true);
@@ -1230,6 +1244,7 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_Implementation_TasksFromOtherSprint_Ignored()
     {
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         await SeedSprintAsync(id: "sprint-other", number: 2, stage: "Planning");
         SeedTask("sprint-1", "Completed", "Our task");
         SeedTask("sprint-other", "Active", "Someone else's task");
@@ -1384,6 +1399,7 @@ public class SprintStageServiceTests : IDisposable
         // Mirror the RoomService.TransitionPhaseAsync semantics: hitting
         // FinalSynthesis sets room.Status = Completed.
         var sprint = await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Implementation", status: "Active");
 
         await _service.AdvanceStageAsync("sprint-1");
@@ -1508,6 +1524,7 @@ public class SprintStageServiceTests : IDisposable
         var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
         // Implementation has prerequisites — force=true must skip them and announce as "forced".
         await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
 
         await service.AdvanceStageAsync("sprint-1", force: true);
 
@@ -1596,6 +1613,7 @@ public class SprintStageServiceTests : IDisposable
         var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
         var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
         var sprint = await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
         _db.Rooms.Add(new RoomEntity
         {
             Id = "room-impl",
