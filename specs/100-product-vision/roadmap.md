@@ -205,6 +205,12 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 
 - **Per-archetype acceptance-criteria source for self-evaluation** (referenced by P1.4 design §10 deferred). Today self-eval reads acceptance criteria from `RequirementsDocument`. Future sprint archetypes (e.g., a refactor sprint with no Intake) would have no `RequirementsDocument`. A pluggable per-archetype criteria source would unblock self-eval for those archetypes. **Why not yet**: sprint archetypes are not a real concept in the codebase (zero references in `src/`); designing this now would be on top of a non-existent abstraction. Wait until at least one non-default archetype is proposed.
 
+- **Per-tool `MaxDenialsPerTurn`** (carried over from earlier session handoffs, surfaced again 2026-04-25). Today permission-denial throttling is a single global cap per agent turn. Splitting it per-tool would let agents continue working when one tool is misbehaving while still bounding total damage. **Why not yet**: not blocking any roadmap item; revisit when an actual scenario produces the symptom.
+
+- **Refactor candidate: `DiscordNotificationProvider.cs`** (surfaced 2026-04-25 by stabilization gate). 540 lines, 14 fix commits in the last 30 days, **4 lifecycle/concurrency fixes in the last 14 days alone** (#114 connect/dispose hardening, #115 Configure/Connect serialization, #116 outbound-op drain on teardown, plus #112 auth alignment). The connect / configure / dispose state machine is the hot spot. Recommend extracting a dedicated lifecycle/state-machine class so the provider's transport code is decoupled from connection state. **Why not yet**: not on the critical path to Phase 1 acceptance; current notification path works. Revisit during Phase 2 or after the next lifecycle bug.
+
+- **Phase 1 acceptance run automation (P1.9 helper)**. P1.9 is the human-supervised end-to-end §10 acceptance run. A small CLI/script that drives the API the same way (`POST /api/sprints`, polls for stage advances, captures Discord delivery, asserts read-only after Completion) would let the human re-run the acceptance test deterministically and catch regressions in the autonomy loop. **Why not yet**: P1.9 itself is the next roadmap item and is intentionally human-supervised the first time. Build the automation only after P1.9 has passed once — otherwise we automate testing of unverified behavior.
+
 ---
 
 ## Status Tracking
@@ -230,3 +236,4 @@ When a future session works on an item, update its status here in the same commi
 ## Revision History
 
 - **2026-04-24**: Initial roadmap captured from product-design conversation. Phase 1 defined as the autonomous loop end-to-end. Acceptance test set as the 10-step observable run from spec.md §10. — agent: anvil (operator: agent-academy)
+- **2026-04-25**: Stabilization session. Baseline green (6473 server + 425 forge + 3020 client tests; 0 build warnings). Pruned orphan worktree `task/design-unified-task-service-layer-contracts-92c583` (already merged via #148). Surfaced 3 new Proposed Additions: per-tool `MaxDenialsPerTurn` (carry-over), `DiscordNotificationProvider` refactor (4 lifecycle fixes in 14 days), and a P1.9 acceptance-run helper. Phase 1 (P1.1–P1.8) all marked done; only P1.9 (human-supervised acceptance run) remains for Phase 1 closure. — agent: anvil (operator: agent-academy)
