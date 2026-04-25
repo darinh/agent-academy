@@ -66,6 +66,112 @@ public sealed class AgentPermissionHandlerTests
         Assert.Equal(PermissionRequestResultKind.DeniedByRules, result.Kind);
     }
 
+    // ── Tool-implied kinds (regression: Sprint #2 hang 2026-04-25) ──
+    //
+    // When a write/shell-capable tool is registered, the SDK fires
+    // permission requests with Kind="write"/"shell" for the underlying
+    // operations even though the tool envelope (Kind="tool"/"custom-tool")
+    // is also requested. If we deny the underlying kind, the SDK silently
+    // retries until the per-turn budget is exhausted and the agent goes
+    // dark, killing the conversation round and breaking sprint self-drive.
+
+    [Theory]
+    [InlineData("write")]
+    [InlineData("WRITE")]
+    public async Task Create_WriteFileRegistered_WriteKindApproved(string kind)
+    {
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "write_file" }, _logger);
+
+        var result = await handler(MakeRequest(kind), MakeInvocation());
+
+        Assert.Equal(PermissionRequestResultKind.Approved, result.Kind);
+    }
+
+    [Fact]
+    public async Task Create_WriteFileRegistered_ShellKindStillDenied()
+    {
+        // write_file does NOT imply shell — only commit_changes does.
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "write_file" }, _logger);
+
+        var result = await handler(MakeRequest("shell"), MakeInvocation($"isolated-{Guid.NewGuid():N}"));
+
+        Assert.Equal(PermissionRequestResultKind.DeniedByRules, result.Kind);
+    }
+
+    [Theory]
+    [InlineData("shell")]
+    [InlineData("write")]
+    [InlineData("Shell")]
+    public async Task Create_CommitChangesRegistered_ShellAndWriteApproved(string kind)
+    {
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "commit_changes" }, _logger);
+
+        var result = await handler(MakeRequest(kind), MakeInvocation());
+
+        Assert.Equal(PermissionRequestResultKind.Approved, result.Kind);
+    }
+
+    [Fact]
+    public async Task Create_HephaestusToolset_AllExpectedKindsApproved()
+    {
+        // Mirrors Hephaestus's session toolset (per agents.json EnabledTools
+        // = chat, task-state, code, code-write, task-write, memory which
+        // expand to read_file, search_code, list_*, write_file, commit_changes,
+        // and friends). Verifies the exact failure mode from the 2026-04-25
+        // incident is fixed: write + shell are approved when the corresponding
+        // tools are registered.
+        var hephaestusTools = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "list_tasks", "list_rooms", "show_agents",
+            "read_file", "search_code",
+            "create_task", "update_task_status", "add_task_comment",
+            "remember", "recall",
+            "write_file", "commit_changes",
+        };
+        var handler = AgentPermissionHandler.Create(hephaestusTools, _logger);
+
+        Assert.Equal(
+            PermissionRequestResultKind.Approved,
+            (await handler(MakeRequest("write"), MakeInvocation("h-write"))).Kind);
+        Assert.Equal(
+            PermissionRequestResultKind.Approved,
+            (await handler(MakeRequest("shell"), MakeInvocation("h-shell"))).Kind);
+        Assert.Equal(
+            PermissionRequestResultKind.Approved,
+            (await handler(MakeRequest("tool"), MakeInvocation("h-tool"))).Kind);
+        Assert.Equal(
+            PermissionRequestResultKind.Approved,
+            (await handler(MakeRequest("read"), MakeInvocation("h-read"))).Kind);
+        Assert.Equal(
+            PermissionRequestResultKind.DeniedByRules,
+            (await handler(MakeRequest("url"), MakeInvocation($"h-url-{Guid.NewGuid():N}"))).Kind);
+    }
+
+    [Fact]
+    public async Task Create_ReadOnlyAgent_WriteAndShellStillDenied()
+    {
+        // Read-only agents (Aristotle, Socrates) only have envelope tools.
+        // Their underlying operation kinds must still be denied, otherwise
+        // the safety guarantee that "read-only agents cannot mutate"
+        // collapses.
+        var readOnlyTools = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "read_file", "search_code", "list_tasks", "list_rooms",
+            "show_agents", "remember", "recall",
+        };
+        var handler = AgentPermissionHandler.Create(readOnlyTools, _logger);
+
+        Assert.Equal(
+            PermissionRequestResultKind.DeniedByRules,
+            (await handler(MakeRequest("write"), MakeInvocation($"ro-w-{Guid.NewGuid():N}"))).Kind);
+        Assert.Equal(
+            PermissionRequestResultKind.DeniedByRules,
+            (await handler(MakeRequest("shell"), MakeInvocation($"ro-s-{Guid.NewGuid():N}"))).Kind);
+    }
+
     // ── No tools registered → approve all ───────────────────────
 
     [Theory]
