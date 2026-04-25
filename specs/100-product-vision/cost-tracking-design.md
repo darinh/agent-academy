@@ -1,6 +1,6 @@
 # Cost Tracking & Anomaly Detection: Design Doc
 
-**Status**: DRAFT — pending human review before implementation.
+**Status**: RESOLVED — design questions in §7 answered 2026-04-25; ready for implementation per §8.
 **Roadmap items**: P1.2 §4.6 (cost-cap insertion point) + P1.4 §10 (cost tracking deferred). This doc supersedes the prior cap-based draft per human direction (2026-04-25): there is no default per-sprint cap, tracking is always-on, and the binary cap-or-no-cap decision is replaced with a configurable `BreachAction` triggered by anomaly detection against a learned baseline.
 **Closes gap**: G1 (runaway-cost potential identified by roadmap §P1.2 critical safety requirement). G1 is now closed by the combination of P1.2's `MaxRoundsPerSprint` (the hard backstop against runaway loops) and this design's anomaly detection (the soft signal against silent-cost-burn).
 **Risk**: 🟡 (additive instrumentation + one new guard call site; one new schema column on `llm_usage`, two on `sprints`; no new halt primitive).
@@ -69,18 +69,23 @@ public string? SprintId { get; set; }
 public string CostCategory { get; set; } = "Dev";
 ```
 
-**`SprintEntity` (two new columns)** — for breach-state idempotence:
+**`SprintEntity` (three new columns)** — for breach-state idempotence and banded re-fire (§7 decision 8):
 
 ```csharp
-// Set once per sprint when a BreachAction fires. Ensures the same anomaly does
-// not re-notify on every subsequent decision call. Persisted (not in-memory) so
-// it survives restart and is visible via GET /api/sprints/{id}/cost.
+// Set when a BreachAction fires. Updated on each new-band fire so the
+// timestamp always reflects the most recent fire. Persisted (not in-memory)
+// so it survives restart and is visible via GET /api/sprints/{id}/cost.
 public DateTime? BreachActionFiredAt { get; set; }
 
 // "Notify" | "Warn" | "Block" — the action taken when BreachActionFiredAt was set.
 // Useful for ops to see what was actually fired (config may have changed since).
 [StringLength(16)]
 public string? LastBreachAction { get; set; }
+
+// Highest integer σ band already fired this sprint (e.g. 2 means a 2σ fire
+// happened; a 3σ fire is still allowed, a 2.5σ re-fire is not). NULL means
+// no band has been fired yet. See §7 decision 8 for the banded-firing rationale.
+public int? LastBreachActionZBand { get; set; }
 ```
 
 **Removed from the previous draft** (do NOT add):
@@ -93,7 +98,7 @@ Migration is **additive** — no backfill required:
 
 - `LlmUsageEntity.SprintId` defaults to `NULL`. New writes stamp it via `ConversationSessionEntity.SprintId` (which is already populated for sprint-attached rooms — see `ConversationSessionEntity.cs:23`).
 - `LlmUsageEntity.CostCategory` defaults to `"Dev"`. Pre-migration rows are conservatively classified as Dev — they are **not** retroactively included in baseline calculations (which is the safe default: historical baselines should only learn from rows whose categorization was set deliberately at write time).
-- `SprintEntity.BreachActionFiredAt` and `LastBreachAction` default to `NULL`.
+- `SprintEntity.BreachActionFiredAt`, `LastBreachAction`, and `LastBreachActionZBand` all default to `NULL`.
 
 We do **not** add `RunningCostUsd` / `RunningTokens` columns on `SprintEntity`. The running total is computed from `llm_usage` on the same query that powers the guard decision (§4). This avoids drift between the tracker's authoritative table and a cached counter.
 
@@ -178,7 +183,7 @@ The categorization is set once at recording time and never changed. This means:
 - **Anomaly detection** for the current sprint: `WHERE SprintId = currentSprintId AND CostCategory = "Prod"` (always Prod for the active sprint by construction, but the explicit filter is defensive).
 - **Dev-cost reporting** (ops dashboard): `WHERE CostCategory = "Dev"` — for operator visibility into agent-mod / ad-hoc spend, never for gating.
 
-If a breakout room is later promoted to attach to a sprint (rare), late-attached rows are not retroactively re-categorized. This is acceptable: the cost was incurred under the dev categorization, and re-tagging would require backfill logic for a small edge case. **Reviewer ask (§7 q6)** flags this.
+If a breakout room is later promoted to attach to a sprint (rare), late-attached rows are not retroactively re-categorized. This is acceptable: the cost was incurred under the dev categorization, and re-tagging would require backfill logic for a small edge case. Confirmed per §7 decision 6.
 
 ---
 
@@ -313,21 +318,30 @@ public sealed class CostGuard : ICostGuard
 
             // Anomaly?
             var anomaly = z.HasValue && z.Value >= (decimal)opts.AnomalyStdDevs;
-            if (!anomaly || sprint.BreachActionFiredAt != null)
+            // Banded re-fire (§7 decision 8): fire iff anomaly AND we have not already
+            // fired at-or-above the current integer σ band this sprint.
+            var currentBand = z.HasValue ? (int)Math.Floor(z.Value) : 0;
+            var alreadyFiredThisBand = sprint.LastBreachActionZBand.HasValue
+                && currentBand <= sprint.LastBreachActionZBand.Value;
+            if (!anomaly || alreadyFiredThisBand)
             {
                 return Observable(runningCost, runningTokens, sprint, baseline, projected, z, action: BreachAction.None, baselineReady: true);
             }
 
-            // Atomic claim: only one decision call wins the right to fire BreachAction for this sprint.
+            // Atomic claim: only one decision call wins the right to fire BreachAction
+            // for this sprint AT THIS BAND. The conditional WHERE encodes "no band yet
+            // fired, OR the highest band fired is strictly below the band we'd fire now."
             var rowsUpdated = await db.Sprints
-                .Where(s => s.Id == sprint.Id && s.BreachActionFiredAt == null)
+                .Where(s => s.Id == sprint.Id
+                    && (s.LastBreachActionZBand == null || s.LastBreachActionZBand < currentBand))
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(s => s.BreachActionFiredAt, DateTime.UtcNow)
-                    .SetProperty(s => s.LastBreachAction, opts.BreachAction.ToString()),
+                    .SetProperty(s => s.LastBreachAction, opts.BreachAction.ToString())
+                    .SetProperty(s => s.LastBreachActionZBand, currentBand),
                     ct);
             if (rowsUpdated == 0)
             {
-                // Another decision call beat us to it; treat as observed.
+                // Another decision call beat us to it (or raced past our band); treat as observed.
                 return Observable(runningCost, runningTokens, sprint, baseline, projected, z, action: BreachAction.None, baselineReady: true);
             }
 
@@ -391,7 +405,7 @@ public sealed class CostGuard : ICostGuard
 
 `Observable(...)` and `Decision(...)` are private helpers that pack the record with the correct fields; sketched here for clarity, not a contract.
 
-The persisted `BreachActionFiredAt` flag (claimed atomically via `ExecuteUpdateAsync`) ensures only one decision call wins the right to broadcast for a given sprint, and the broadcast does not repeat after restart. This is the single-fire idempotence the previous design's `CostWarnEmittedAt` provided, generalised across all three BreachAction modes.
+The persisted `LastBreachActionZBand` (claimed atomically via `ExecuteUpdateAsync`) ensures only one decision call wins the right to broadcast at any given σ band, and re-firing at the same or lower band — including across process restarts — is impossible. Crossing into a higher integer band re-arms exactly one new fire (per §7 decision 8). This generalises across all three BreachAction modes.
 
 ### 4.4 Continuation dispatch must also re-read sprint state
 
@@ -428,7 +442,7 @@ public async Task<Baseline> RecomputeAsync(CancellationToken ct)
     var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
     var opts = _options.CurrentValue;
 
-    // "Clean completed sprint" definition (§7 q4 confirms):
+    // "Clean completed sprint" definition (per §7 decision 4):
     //   Status == "Completed"
     //   AND BreachActionFiredAt IS NULL  (no anomaly fired during the sprint)
     //   AND BlockedAt IS NULL            (currently unblocked at completion)
@@ -474,18 +488,18 @@ public async Task<Baseline> RecomputeAsync(CancellationToken ct)
 
 Cache strategy: hold the result indefinitely; invalidate (force recompute on next `GetAsync`) when the service observes an `ActivityEventType.SprintCompleted` event. This means decision calls don't pay the recomputation cost; only completions do, and at most once per completion.
 
-`ResolveSprintPointsAsync` is a TBD: there is currently no `Points` field on `TaskEntity` (verified during Survey). **Reviewer ask (§7 q5)** confirms whether to add a `Points` field, derive points from a `Complexity` proxy, or fall back to "non-cancelled task count" as the unit (cost-per-task instead of cost-per-point). The implementation should use one of these; the design is otherwise indifferent.
+`ResolveSprintPointsAsync` returns the count of `TaskEntity` rows for the sprint where `Status != Cancelled`. This is the "task-count fallback" — there is no `Points` field on `TaskEntity` and one will not be added (per §7 decision 5). Cost-per-point is therefore literally cost-per-non-cancelled-task throughout this design.
 
 ### 4.6 No unblock-recovery extension. No raise-cap endpoint.
 
 The previous draft extended `UnblockSprintAsync` to clear `CostWarnEmittedAt` and added a `POST /api/sprints/{id}/raise-cost-cap` endpoint with transactional cap-update + auto-unblock. Both are **removed**:
 
-- **No warn flag to clear.** `BreachActionFiredAt` is intentionally one-shot per sprint. If the human reviews and unblocks via the existing `POST /api/sprints/{id}/unblock`, the sprint resumes. The breach record stays — re-firing the same notification on the next decision call would be noise. (The `ProjectedEndOfSprintCostUsd` continues to update on `GET /cost` so the human can monitor whether the unblock was justified.)
+- **No warn flag to clear.** `BreachActionFiredAt` / `LastBreachActionZBand` intentionally persist across the unblock. If the human reviews and unblocks via the existing `POST /api/sprints/{id}/unblock`, the sprint resumes; re-firing at the same σ band would be noise. Drift into a *higher* band will fire again per §7 decision 8 (the operator who unblocked at 2σ assuming "small overage" gets a fresh notification at 3σ). The `ProjectedEndOfSprintCostUsd` continues to update on `GET /cost` so the human can monitor whether the unblock was justified.
 - **No cap to raise.** Without `MaxCostUsdOverride`, there is nothing to PATCH. If the human wants to relax enforcement for a specific sprint, the path is: review the anomaly, unblock with `POST /unblock`, monitor `GET /cost` for further drift. If anomalies become routine and the operator wants the guard quieter, they change the global `BreachAction` to `Notify`.
 
 This is intentional friction reduction: every "raise the cap" call in the previous design was operator toil that produced no signal about whether the new cap was right either. The unified path — observe via `GET /cost`, decide, unblock — covers the same cases with one fewer endpoint.
 
-**Reviewer ask (§7 q8)** flags an exception: should `BreachAction` re-fire when a *new* stddev band is crossed (e.g., 2σ → 3σ → 4σ)? The current design says no (one fire per sprint); an alternative is "fire once per integer σ band crossed" with a column tracking the highest band fired.
+**Banded re-fire (§7 decision 8)**: `BreachAction` re-fires once per integer σ band crossed (2σ → 3σ → 4σ → …). `SprintEntity.LastBreachActionZBand` (int, nullable) tracks the highest band already fired this sprint; a new fire requires `floor(currentZ) > LastBreachActionZBand`. `BreachActionFiredAt` and `LastBreachAction` continue to record the most recent fire (used for one-shot idempotence within a band, including across process restarts).
 
 ---
 
@@ -550,7 +564,7 @@ Removed (§4.6). The existing `POST /api/sprints/{id}/unblock` is the only opera
 
 ### 5.4 No frontend in this design
 
-A cost meter on `SprintPanel` and a cost dashboard view are obvious follow-ups; they're shaped for by the endpoints above. Bikeshedding the UI here is out of scope. **Reviewer ask (§7 q7)**.
+A cost meter on `SprintPanel` and a cost dashboard view are obvious follow-ups; they're shaped for by the endpoints above. Bikeshedding the UI here is out of scope. Frontend is **out of scope** for this design (§7 decision 7) and may be added independently.
 
 ---
 
@@ -558,39 +572,41 @@ A cost meter on `SprintPanel` and a cost dashboard view are obvious follow-ups; 
 
 | Trigger | `BreachAction` configured | ActivityEventType | NotificationType | Surface |
 |---------|---------------------------|-------------------|------------------|---------|
-| Anomaly detected, first fire this sprint | `Notify`               | `Progress`         | (Progress mapping) | Discord room post — low-noise observability |
-| Anomaly detected, first fire this sprint | `Warn`                 | new `CostAnomalyWarning` (or reuse existing NeedsInput-mapped event — see §7 q9) | `NeedsInput`       | Discord NeedsInput "Sprint X cost is anomalous (z = N.Nσ)" |
-| Anomaly detected, first fire this sprint | `Block`                | `SprintBlocked` (existing) | `NeedsInput`       | Same surface as any other block — sprint halts |
+| Anomaly detected, new σ band crossed     | `Notify`               | `Progress`         | (Progress mapping) | Discord room post — low-noise observability |
+| Anomaly detected, new σ band crossed     | `Warn`                 | new `CostAnomalyWarning` (per §7 decision 9) | `NeedsInput`       | Discord NeedsInput "Sprint X cost is anomalous (z = N.Nσ)" |
+| Anomaly detected, new σ band crossed     | `Block`                | `SprintBlocked` (existing) | `NeedsInput`       | Same surface as any other block — sprint halts |
 | Cost guard unavailable (production)      | (any)                   | `SprintBlocked` (existing) | `NeedsInput`       | Sprint halts; reason = "Cost guard unavailable; human review required" |
 | Cost guard unavailable (development)     | (any)                   | `Progress`         | (Progress mapping) | Discord room post; sprint continues |
 
-Zero new notification types are strictly required — `Notify` mode reuses `Progress`, `Block` mode reuses `SprintBlocked`. `Warn` mode is the only mode that needs careful event-type choice (see §7 q9).
+`Notify` mode reuses `Progress`, `Block` mode reuses `SprintBlocked`, `Warn` mode adds `ActivityEventType.CostAnomalyWarning` mapped to `NotificationType.NeedsInput` (per §7 decision 9).
 
 ---
 
-## 7. Reviewer asks (open questions for human review)
+## 7. Resolved decisions
 
-1. **Production default `BreachAction = "Warn"` (not `Block`) — agree?** Warn surfaces to humans without halting the sprint; Block halts; Notify is invisible-but-logged. I'd argue Warn is the right default for prod overnight runs: humans get told something looks weird without losing autonomous progress. Block is right for environments where any anomaly is unacceptable (shared org account with billing alerts). Notify is right for dev where the operator is actively present.
+Resolved 2026-04-25 by the human reviewer. Each decision below was a `## 7. Reviewer ask` in the prior revision; the rationale paragraphs are kept so future readers see why the choice was made.
 
-2. **`AnomalyStdDevs = 2.0` (≈ p95) — too sensitive?** Two-sigma is the conventional anomaly threshold (~5% false-positive rate on a normal distribution). With small baseline sample sizes (5–10), false positives go up. Three-sigma (~0.3% FPR) gives quieter alerts but lets bigger overshoots through. I picked 2.0 as the default; configurable per environment.
+1. **Production default `BreachAction = "Warn"`** — confirmed. Warn surfaces to humans without halting the sprint; Block halts; Notify is invisible-but-logged. Warn is the right default for prod overnight runs: humans get told something looks weird without losing autonomous progress. Block is appropriate for environments where any anomaly is unacceptable (shared org account with billing alerts). Notify is appropriate for dev where the operator is actively present.
 
-3. **`MinCleanSprintsForBaseline = 5` — too few?** Statistically marginal (variance estimates with N=5 are noisy). But waiting for 30 sprints to start gating means the guard is effectively off for months. Five is the smallest defensible number; could push to 10. Confirm.
+2. **`AnomalyStdDevs = 2.0`** — confirmed. Two-sigma is the conventional anomaly threshold (~5% false-positive rate on a normal distribution). With small baseline sample sizes (5–10), false positives go up. Three-sigma (~0.3% FPR) gives quieter alerts but lets bigger overshoots through. Configurable per environment.
 
-4. **"Clean completed sprint" definition.** This doc defines clean = `Status=Completed AND BreachActionFiredAt IS NULL AND BlockedAt IS NULL (currently) AND CompletedAt IS NOT NULL AND RoundsThisSprint < MaxRoundsPerSprint at completion`. The "RoundsThisSprint < MaxRoundsPerSprint" filter is the question: a round-cap-hit means the sprint terminated abnormally and its cost-per-point is not a clean reference. Confirm we should exclude. Also: should we exclude sprints with very few points (e.g., < 3) since they're noisy single-data-points? This doc says no — every sprint with at least one point counts. Confirm.
+3. **`MinCleanSprintsForBaseline = 5`** — confirmed. Statistically marginal (variance estimates with N=5 are noisy) but waiting for 30 sprints means the guard is effectively off for months. Five is the smallest defensible number. Raise to 10 if real data shows the variance is too noisy to be useful.
 
-5. **What's a "point" for cost-per-point?** I checked: there is no `Points` field on `TaskEntity` today. Three options: (a) add a `Points` field to `TaskEntity` (small migration); (b) derive points from an existing `Complexity` or `Type` proxy if one is more reliable; (c) fall back to "non-cancelled task count" as the unit (cost-per-task). I'd lean (c) for now — adding a field that humans-or-agents have to fill in correctly is a reliability cost, and per-task cost is meaningful even if coarse. Pick one.
+4. **"Clean completed sprint" definition** — confirmed: `Status=Completed AND BreachActionFiredAt IS NULL AND BlockedAt IS NULL AND CompletedAt IS NOT NULL AND RoundsThisSprint < MaxRoundsPerSprint at completion`. The round-cap filter is intentional: a round-cap-hit means the sprint terminated abnormally and its cost-per-point is not a clean reference. Small sprints (< 3 points) are NOT excluded — every sprint with at least one point counts.
 
-6. **Categorization edge case: ad-hoc sprint-context calls.** If an agent makes a `CopilotSdkSender` call from within a sprint room but for a non-sprint reason (e.g., the orchestrator asks an agent to clarify something procedural), the call is classified `Prod` because the active session has a SprintId. Alternative would require classifying intent at write time — brittle. Confirm `Prod` is fine.
+5. **"Point" definition: non-cancelled task count (option c)** — confirmed. No `Points` field will be added to `TaskEntity`. Per-task cost is meaningful even if coarse, and a points-field that humans-or-agents have to fill in correctly is a reliability cost we're not taking on. The cost-per-point ratio in this doc is therefore literally cost-per-non-cancelled-task. Revisit only if real data shows task counts are too noisy a proxy.
 
-7. **Frontend cost badge in this design's scope?** §5.4. I scoped it as backend-only. If the operator wants visibility before P1.2 lands, a minimal badge in `SprintPanel` is ~40 LOC of frontend work and would help observability. Confirm in or out.
+6. **Ad-hoc sprint-context calls categorized as `Prod`** — confirmed. If an agent makes a `CopilotSdkSender` call from within a sprint room but for a non-sprint reason (e.g., the orchestrator asks an agent to clarify something procedural), the call is classified `Prod` because the active session has a `SprintId`. Classifying intent at write time would be brittle.
 
-8. **One-shot vs banded BreachAction firing.** `BreachActionFiredAt` is one-shot per sprint. A sprint that crosses 2σ, gets unblocked, climbs to 5σ silently — no second notification. Argument for: less noise. Argument against: the human may have unblocked at 2σ assuming "small overage" and miss the climb. Suggest: re-fire only when a *new integer σ band* is crossed (2σ → 3σ → 4σ), with `LastBreachActionZBand` as a column tracking the highest band fired. Adds one column. Confirm.
+7. **Frontend cost badge: out of scope for this design.** Add separately if visibility is wanted before P1.2 lands. The ~40 LOC frontend badge is non-blocking and unrelated to the backend design here.
 
-9. **`Warn` mode event type.** Existing `ActivityEventType` enum doesn't have a "cost anomaly warning" entry. Two options: (a) add `CostAnomalyWarning` and map to NeedsInput; (b) reuse `SprintBlocked` semantically by passing a "warning" subtype in the payload (but this overloads the event with non-block semantics — bad). I'd add `CostAnomalyWarning`. Confirm.
+8. **Banded BreachAction firing** — confirmed: re-fire only when a *new integer σ band* is crossed (2σ → 3σ → 4σ). Adds one column `LastBreachActionZBand` (int, nullable) tracking the highest band fired this sprint. `BreachActionFiredAt` and `LastBreachAction` remain — they record the *most recent* fire. Idempotence: re-firing within the same band must remain a no-op across process restarts. Update `SprintEntity` columns from §6 accordingly.
 
-10. **Baseline cache invalidation.** Recomputing the baseline on every decision call is wasteful (one query per sprint in the window, then sums per sprint). The design caches and invalidates on `ActivityEventType.SprintCompleted` events. Alternative: TTL cache (5 min). Event-driven is more accurate; TTL is more robust to bus glitches. I'd prefer event-driven with a long TTL safety net (say 1 hour). Confirm.
+9. **`Warn` mode event type: add `ActivityEventType.CostAnomalyWarning`** — confirmed. Mapped to `NotificationType.NeedsInput`. Reusing `SprintBlocked` semantically would overload the event with non-block semantics and is rejected.
 
-11. **What happens if the baseline becomes `IsReady = true` mid-sprint?** A sprint already in flight when the 5th clean completion lands: should the guard start evaluating it immediately, or wait until the next sprint? This doc says immediately — there's no reason to give the in-flight sprint a free pass once data exists. Confirm.
+10. **Baseline cache invalidation: event-driven on `SprintCompleted` + 1-hour TTL safety net** — confirmed. Event-driven is more accurate; TTL is more robust to bus glitches. Both are wired.
+
+11. **Mid-sprint baseline becoming ready: guard starts evaluating immediately** — confirmed. A sprint already in flight when the 5th clean completion lands gets evaluated from that point on. There is no free pass once data exists.
 
 ---
 
@@ -598,17 +614,17 @@ Zero new notification types are strictly required — `Notify` mode reuses `Prog
 
 This is a small implementation — comparable in scope to the prior cap-based draft, but with the baseline service and the categorization column adding modest extra work.
 
-1. **Schema migration** (additive). `LlmUsageEntity.SprintId` (nullable string), `LlmUsageEntity.CostCategory` (string default "Dev"); `SprintEntity.BreachActionFiredAt` (nullable DateTime), `SprintEntity.LastBreachAction` (nullable string ≤ 16). EF migration only; no backfill.
+1. **Schema migration** (additive). `LlmUsageEntity.SprintId` (nullable string), `LlmUsageEntity.CostCategory` (string default "Dev"); `SprintEntity.BreachActionFiredAt` (nullable DateTime), `SprintEntity.LastBreachAction` (nullable string ≤ 16), `SprintEntity.LastBreachActionZBand` (nullable int — see §7 decision 8). EF migration only; no backfill.
 2. **`SprintId` + `CostCategory` write-time stamping** in `CopilotSdkSender.SendAsync` (line 180). Lookup `ConversationSessionEntity.SprintId` via `roomId`; categorize Prod iff non-null. Extend `ILlmUsageTracker.RecordAsync` signature with `string? sprintId` and `string costCategory` parameters.
 3. **`CostGuardOptions` record + DI binding.** New `Orchestrator:CostGuard` config section, per-environment defaults (Dev=Notify, Prod=Warn), `AddOptions<CostGuardOptions>().BindConfiguration(...)` in startup.
-4. **Sprint-points resolution** (per §7 q5). Either add a `Points` field to `TaskEntity` with a migration + agent-prompt update (so agents fill it when creating tasks), or commit to the task-count fallback. Decide before step 5.
+4. **Sprint-points resolution: task-count fallback** (per §7 decision 5). `ResolveSprintPointsAsync` returns `count(TaskEntity where SprintId = X and Status != Cancelled)`. No `TaskEntity.Points` field, no migration, no agent-prompt change.
 5. **`IBaselineService` + `Baseline` record + `BaselineService` impl.** Singleton DI. Subscribes to the activity bus for `SprintCompleted` events to invalidate the cache. Includes a TTL safety net.
 6. **`ICostGuard` interface + `CostGuardDecision` record + `BreachAction` enum + `NoOpCostGuard` impl + `CostGuard` impl.** Singleton DI. Default binding to `CostGuard` (no env-or-flag toggle — tracking is always-on, the BreachAction config controls the action). `NoOpCostGuard` is retained for tests.
 7. **Wire into `SelfDriveDecisionService.DecideAndMaybeEnqueueAsync` step 12.** Single call site. Includes the post-guard re-read of sprint state (§4.1, principle 11).
 8. **Continuation dispatch re-read** in the queue worker that consumes `SystemContinuation` items (§4.4). If the sprint is no longer Active / is BlockedAt / is AwaitingSignOff, drop the item. (Same as the prior design — unchanged by this rewrite.)
 9. **`GET /api/sprints/{id}/cost`** controller + DTO (`SprintCostDto`).
 10. **`GET /api/cost/dashboard`** controller + DTO (`CostDashboardDto`).
-11. **New `ActivityEventType.CostAnomalyWarning`** (per §7 q9), with NeedsInput mapping in `ActivityNotificationBroadcaster`.
+11. **New `ActivityEventType.CostAnomalyWarning`** (per §7 decision 9), with NeedsInput mapping in `ActivityNotificationBroadcaster`.
 12. **Tests**: see §10 acceptance criteria + unit tests per the cases below.
 13. **Acceptance test thread (manual)** — see §10.
 
@@ -677,18 +693,19 @@ Each criterion below maps to a design choice in §2/§3/§4 and must pass for th
 17. From another path, call `MarkSprintBlockedAsync` on the same sprint with reason `"Operator emergency stop"`.
 18. Resume the paused decision call. The post-guard re-read sees `BlockedAt != null` and returns without enqueueing. **No agent round runs.**
 
-### I. One-shot BreachAction (idempotence + restart)
+### I. Banded BreachAction firing (idempotence + restart + new-band re-arm)
 
-19. With `BreachAction = "Notify"`, an anomaly fires and `BreachActionFiredAt` is set. The next decision call (still anomalous) returns `TakenAction = None` — no second `Progress` event broadcasts.
-20. Server restarts. Next decision call after restart sees `BreachActionFiredAt != null`, does not re-fire.
+19. With `BreachAction = "Notify"`, an anomaly fires at z = 2.1 (band 2) and `LastBreachActionZBand = 2`. The next decision call (still at z ≈ 2.3, same band) returns `TakenAction = None` — no second `Progress` event broadcasts.
+20. Server restarts. Next decision call after restart at z = 2.4 sees `LastBreachActionZBand = 2 ≥ floor(2.4)`, does not re-fire.
+21. Sprint drifts further; next decision call at z = 3.1 (band 3) fires again — `LastBreachActionZBand` advances to 3. The next decision call at z = 3.2 returns `TakenAction = None`. (Per §7 decision 8.)
 
 ### J. Cap raise + raise-cap endpoint do NOT exist
 
-21. `POST /api/sprints/{id}/raise-cost-cap` returns 404 (or is not registered). No `MaxCostUsdOverride` column on `SprintEntity`. (Negative test: confirms removal.)
+22. `POST /api/sprints/{id}/raise-cost-cap` returns 404 (or is not registered). No `MaxCostUsdOverride` column on `SprintEntity`. (Negative test: confirms removal.)
 
 ### K. Baseline excludes anomaly-fired and round-cap-hit sprints
 
-22. Run a sprint that fires `BreachAction` (any mode) and completes. Confirm it is NOT included in the next baseline computation.
-23. Run a sprint that hits `MaxRoundsPerSprint` and completes (or is blocked at round-cap). Confirm it is NOT included in the next baseline computation.
+23. Run a sprint that fires `BreachAction` (any mode) and completes. Confirm it is NOT included in the next baseline computation.
+24. Run a sprint that hits `MaxRoundsPerSprint` and completes (or is blocked at round-cap). Confirm it is NOT included in the next baseline computation.
 
 If any of A–K fail, this design is wrong and needs revision before merging. Tests should exist for every criterion. The harder criteria (F via fixture, H via injected pause, I via process restart) are integration tests; A–E and G are runtime acceptance.

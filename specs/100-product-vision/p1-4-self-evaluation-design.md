@@ -1,6 +1,6 @@
 # P1.4 — Self-Evaluation Ceremony at End of Implementation: Design Doc
 
-**Status**: DRAFT — pending human review before implementation.
+**Status**: RESOLVED — design questions in §9 answered 2026-04-25; ready for implementation per §8.
 **Roadmap item**: P1.4 (Self-Evaluation Ceremony at End of Implementation).
 **Closes gap**: G4 — "Agents do not self-evaluate before declaring a sprint done."
 **Risk**: 🔴 (state-machine wiring; gates sprint completion; halt path; preamble surface).
@@ -95,7 +95,7 @@ Read from `appsettings.json` under a new `Orchestrator:SelfEval` section, with h
 | `MaxSelfEvalAttempts`     | 3       | After 3 failed attempts the team is going in circles; humans must intervene. |
 | `MinIntervalBetweenAttemptsMinutes` | 0 | No throttle by default — self-eval is rare relative to round budget. |
 
-`MaxSelfEvalAttempts = 3` is deliberately conservative. Two attempts is too few (one bad fix burns half the budget); five+ attempts encourage the team to keep papering over root issues. **Reviewer ask (§9 q1).**
+`MaxSelfEvalAttempts = 3` is deliberately conservative. Two attempts is too few (one bad fix burns half the budget); five+ attempts encourage the team to keep papering over root issues. Confirmed at 3 per §9 decision q1; raise to 5 only if real sprints show the auto-block firing on healthy work.
 
 ---
 
@@ -305,17 +305,19 @@ Order matters: each step depends only on prior steps. Tests must be written alon
 
 ---
 
-## 9. Open design questions for the human reviewer
+## 9. Resolved decisions
 
-**q1. `MaxSelfEvalAttempts` default — 3 or 5?** This doc proposes 3. Three says "we don't trust circular fix-attempts past round 3"; five gives more rope before notifying a human. There is no way to tell which is right without running real sprints. Recommend ship at 3, raise to 5 if the auto-block fires on healthy work.
+Resolved 2026-04-25 by the human reviewer. The questions in the prior revision are kept here as decisions so future readers see the rationale.
 
-**q2. Should `MERGE_PR` / `CREATE_PR` be hard-blocked at the command layer when `SelfEvaluationInFlight == true`?** This doc deliberately does NOT block them — the preamble discourages them and that's enough for cooperative agents. Hard-blocking adds command-layer plumbing and a new failure mode (PR-in-flight when self-eval starts). Recommend: do not hard-block; revisit if observed misbehaviour.
+**q1. `MaxSelfEvalAttempts = 3` — confirmed.** Three says "we don't trust circular fix-attempts past round 3." Raise to 5 only if real sprints show the auto-block firing on healthy work.
 
-**q3. Are per-task `SuccessCriteria` the right source for every sprint archetype?** This doc keys self-eval to per-task criteria (PR #135 retired the sprint-level list as a category error). That works whenever the sprint produces tasks. A future archetype that delivers value without producing TaskEntity rows (e.g., a pure documentation sprint that just edits markdown) would have nothing to evaluate against and would refuse self-eval per §3.2. If such archetypes prove common, the right answer is to make those archetypes produce tasks (even if the task body is "edit doc X to say Y") rather than re-introduce a sprint-level criteria field. Flagging here.
+**q2. `MERGE_PR` / `CREATE_PR` are NOT hard-blocked at the command layer during self-eval — confirmed.** The preamble discourages them and that's enough for cooperative agents. Revisit only if observed misbehaviour. Hard-blocking adds command-layer plumbing and a new failure mode (PR-in-flight when self-eval starts) we're not taking on.
 
-**q4. Should `SelfEvaluationReport` content be append-only or last-write-wins?** This doc treats each report as a new row (multiple per sprint). The orchestrator reads "the most recent." Alternative: keep one row and overwrite. Append-only gives a clean audit trail (frontend can show "Attempt 1 found X, Attempt 2 fixed it") and matches `SprintArtifactEntity`'s natural shape. Recommend append-only.
+**q3. Per-task `SuccessCriteria` is the source for every sprint archetype — confirmed.** A future archetype that delivers value without producing TaskEntity rows (e.g., a pure documentation sprint) refuses self-eval per §3.2. The correct fix if such archetypes prove common is to make those archetypes produce tasks (even if the task body is "edit doc X to say Y") — NOT to re-introduce a sprint-level criteria field. The sprint-level field was retired in PR #135 as a category error and is not coming back.
 
-**q5. Should the verdict gate (§4.4) require AllPass, or accept "AllPass-or-human-override"?** A human running `ADVANCE_STAGE` with `force=true` today bypasses prerequisites but NOT artifact gates. Self-eval verdict is a soft gate (we said "all PASS"); should `force=true` skip it? Recommend: no — the whole point is that the auto-advance path requires PASS. A human who wants to advance despite a FAIL can call `POST /api/sprints/{id}/unblock` after a manual `MarkSprintBlocked` followed by storing an override report; the friction is intentional.
+**q4. `SelfEvaluationReport` is append-only — confirmed.** Each report is a new row (multiple per sprint). The orchestrator reads "the most recent." Append-only gives a clean audit trail (frontend can show "Attempt 1 found X, Attempt 2 fixed it") and matches `SprintArtifactEntity`'s natural shape.
+
+**q5. The verdict gate requires AllPass; `force=true` does NOT skip it — confirmed.** The whole point is that the auto-advance path requires PASS. A human who wants to advance despite a FAIL must call `POST /api/sprints/{id}/unblock` after a manual `MarkSprintBlocked` followed by storing an override report. The friction is intentional.
 
 ---
 
