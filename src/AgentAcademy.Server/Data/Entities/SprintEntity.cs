@@ -37,6 +37,39 @@ public class SprintEntity
     // (p1-2-self-drive-design.md §6). Null means use the configured default.
     public int? MaxRoundsOverride { get; set; }
 
+    // Self-evaluation accounting (P1.4 full scope, foundation).
+    // See specs/100-product-vision/p1-4-self-evaluation-design.md §3.1.
+    // All four are reset on stage transitions OUT of Implementation
+    // (set by the verdict path added in the next P1.4 PR; no behavioural
+    // wiring lives in this foundation PR).
+
+    /// <summary>
+    /// True between RUN_SELF_EVAL and either ADVANCE_STAGE (on AllPass)
+    /// or a new attempt opening (on AnyFail/Unverified). When true, the
+    /// orchestrator injects the self-evaluation preamble instead of the
+    /// normal Implementation preamble.
+    /// </summary>
+    public bool SelfEvaluationInFlight { get; set; }
+
+    /// <summary>
+    /// Number of self-evaluation reports submitted at Implementation for
+    /// this sprint. Capped by Orchestrator:SelfEval:MaxSelfEvalAttempts;
+    /// hitting the cap auto-blocks the sprint (added in the next P1.4 PR).
+    /// </summary>
+    public int SelfEvalAttempts { get; set; }
+
+    /// <summary>Wall-clock timestamp of the most recent self-evaluation submission.</summary>
+    public DateTime? LastSelfEvalAt { get; set; }
+
+    /// <summary>
+    /// Cached <c>OverallVerdict</c> of the most recent submission
+    /// (<c>"AllPass"</c> | <c>"AnyFail"</c> | <c>"Unverified"</c>).
+    /// Stored as string for DB readability; compared as
+    /// <see cref="AgentAcademy.Shared.Models.SelfEvaluationOverallVerdict"/>
+    /// at decision-time.
+    /// </summary>
+    public string? LastSelfEvalVerdict { get; set; }
+
     // Navigation
     public SprintEntity? OverflowFromSprint { get; set; }
 }

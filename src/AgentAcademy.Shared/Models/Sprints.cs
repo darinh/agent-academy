@@ -28,7 +28,39 @@ public enum ArtifactType
     SprintPlan,
     ValidationReport,
     SprintReport,
-    OverflowRequirements
+    OverflowRequirements,
+    SelfEvaluationReport
+}
+
+/// <summary>
+/// Verdict for a single criterion within a <see cref="SelfEvaluationReport"/>.
+/// PASS = concrete evidence the criterion is met.
+/// FAIL = the criterion is not met; FixPlan describes the gap.
+/// UNVERIFIED = plausibly met but no concrete evidence; FixPlan describes
+/// the verification step that's missing.
+/// See specs/100-product-vision/p1-4-self-evaluation-design.md §3.2.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SelfEvaluationVerdict
+{
+    PASS,
+    FAIL,
+    UNVERIFIED
+}
+
+/// <summary>
+/// Rollup verdict for a self-evaluation report.
+/// AllPass    = every item Verdict == PASS.
+/// AnyFail    = at least one item Verdict == FAIL.
+/// Unverified = no FAILs, but at least one UNVERIFIED.
+/// See specs/100-product-vision/p1-4-self-evaluation-design.md §3.2.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SelfEvaluationOverallVerdict
+{
+    AllPass,
+    AnyFail,
+    Unverified
 }
 
 public record SprintSnapshot(
@@ -81,6 +113,40 @@ public record SprintReport(
     List<string> Delivered,
     List<string> Learnings,
     List<string>? OverflowRequirements);
+
+/// <summary>
+/// One per-task entry in a <see cref="SelfEvaluationReport"/>. Records a
+/// verdict against the task's success criterion, with evidence (PASS) or
+/// a fix plan (FAIL/UNVERIFIED).
+///
+/// <para><c>SuccessCriteria</c> must be copied verbatim from
+/// <c>TaskEntity.SuccessCriteria</c>; reworded criteria are rejected by
+/// validation (DB-aware check; lives outside this static type so it can
+/// look up the task row).</para>
+/// </summary>
+public record SelfEvaluationItem(
+    string TaskId,
+    string SuccessCriteria,
+    SelfEvaluationVerdict Verdict,
+    string Evidence,
+    string? FixPlan);
+
+/// <summary>
+/// A self-evaluation report stored as a <see cref="ArtifactType.SelfEvaluationReport"/>
+/// artifact at <see cref="SprintStage.Implementation"/>. One entry per
+/// non-cancelled <c>TaskEntity</c> in the sprint.
+///
+/// <para>See specs/100-product-vision/p1-4-self-evaluation-design.md §3.2 for
+/// the full validation contract. Static (parse-level) checks live in
+/// <c>SprintArtifactService.ValidateArtifactContent</c>; DB-aware checks
+/// (task-set match, verbatim criterion match) live in the verdict path
+/// added by the next P1.4 PR.</para>
+/// </summary>
+public record SelfEvaluationReport(
+    int Attempt,
+    List<SelfEvaluationItem> Items,
+    SelfEvaluationOverallVerdict OverallVerdict,
+    string? Notes);
 
 // ── Sprint Metrics ──────────────────────────────────────────
 
