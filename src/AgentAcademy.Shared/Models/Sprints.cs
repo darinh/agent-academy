@@ -41,7 +41,9 @@ public record SprintSnapshot(
     SprintStage? PendingStage,
     DateTime? SignOffRequestedAt,
     DateTime CreatedAt,
-    DateTime? CompletedAt);
+    DateTime? CompletedAt,
+    DateTime? BlockedAt = null,
+    string? BlockReason = null);
 
 public record SprintArtifact(
     int Id,
@@ -173,6 +175,9 @@ public sealed record SprintScheduleRequest(
     string CronExpression,
     string TimeZoneId = "UTC",
     bool Enabled = true);
+
+/// <summary>REST API model for blocking a sprint with a reason.</summary>
+public sealed record BlockSprintRequest(string Reason);
 
 /// <summary>REST API model returned for sprint schedule queries.</summary>
 public sealed record SprintScheduleResponse(

@@ -424,6 +424,85 @@ public class SprintControllerTests : IDisposable
         Assert.IsType<ConflictObjectResult>(result);
     }
 
+    // ── BlockSprint / UnblockSprint ──────────────────────────────
+
+    [Fact]
+    public async Task BlockSprint_Success_SetsBlockedFieldsAndStaysActive()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.BlockSprint(sprint.Id, new BlockSprintRequest("Self-eval failed"));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintSnapshot>(ok.Value);
+        Assert.Equal(SprintStatus.Active, body.Status);
+        Assert.NotNull(body.BlockedAt);
+        Assert.Equal("Self-eval failed", body.BlockReason);
+    }
+
+    [Fact]
+    public async Task BlockSprint_EmptyReason_ReturnsBadRequest()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var nullBody = await _controller.BlockSprint(sprint.Id, null);
+        Assert.IsType<BadRequestObjectResult>(nullBody);
+
+        var emptyReason = await _controller.BlockSprint(sprint.Id, new BlockSprintRequest("   "));
+        Assert.IsType<BadRequestObjectResult>(emptyReason);
+    }
+
+    [Fact]
+    public async Task BlockSprint_OnTerminatedSprint_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CancelSprintAsync(sprint.Id);
+
+        var result = await _controller.BlockSprint(sprint.Id, new BlockSprintRequest("late"));
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task BlockSprint_WrongWorkspace_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/tmp/other-workspace");
+
+        var result = await _controller.BlockSprint(sprint.Id, new BlockSprintRequest("reason"));
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task UnblockSprint_ClearsFlag()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.MarkSprintBlockedAsync(sprint.Id, "Stuck");
+
+        var result = await _controller.UnblockSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintSnapshot>(ok.Value);
+        Assert.Null(body.BlockedAt);
+        Assert.Null(body.BlockReason);
+    }
+
+    [Fact]
+    public async Task UnblockSprint_NotBlocked_ReturnsOkUnchanged()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.UnblockSprint(sprint.Id);
+
+        Assert.IsType<OkObjectResult>(result);
+    }
+
     // ── ApproveAdvance ──────────────────────────────────────────
 
     [Fact]

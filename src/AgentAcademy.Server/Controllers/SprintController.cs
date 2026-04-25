@@ -286,6 +286,61 @@ public class SprintController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/sprints/{id}/block — mark the sprint as blocked, recording a reason.
+    /// Sprint stays Active; emits SprintBlocked activity event which routes to Discord.
+    /// </summary>
+    [HttpPost("{id}/block")]
+    public async Task<IActionResult> BlockSprint(string id, [FromBody] BlockSprintRequest? request)
+    {
+        var reason = request?.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+            return BadRequest(ApiProblem.BadRequest("'reason' is required."));
+
+        try
+        {
+            var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
+            if (ownerError is not null) return ownerError;
+
+            var sprint = await _sprintService.MarkSprintBlockedAsync(id, reason);
+            return Ok(ToSnapshot(sprint));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiProblem.Conflict(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to block sprint {Id}", id);
+            return Problem("Failed to block sprint.");
+        }
+    }
+
+    /// <summary>
+    /// POST /api/sprints/{id}/unblock — clear the blocked flag. Idempotent.
+    /// </summary>
+    [HttpPost("{id}/unblock")]
+    public async Task<IActionResult> UnblockSprint(string id)
+    {
+        try
+        {
+            var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
+            if (ownerError is not null) return ownerError;
+
+            var sprint = await _sprintService.UnblockSprintAsync(id);
+            return Ok(ToSnapshot(sprint));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiProblem.Conflict(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to unblock sprint {Id}", id);
+            return Problem("Failed to unblock sprint.");
+        }
+    }
+
+    /// <summary>
     /// POST /api/sprints/{id}/approve-advance — user approves pending stage advancement.
     /// </summary>
     [HttpPost("{id}/approve-advance")]
@@ -493,7 +548,8 @@ public class SprintController : ControllerBase
         return new(e.Id, e.Number, status, stage,
             e.OverflowFromSprintId, e.AwaitingSignOff,
             e.PendingStage is not null ? pendingStage : null,
-            e.SignOffRequestedAt, e.CreatedAt, e.CompletedAt);
+            e.SignOffRequestedAt, e.CreatedAt, e.CompletedAt,
+            e.BlockedAt, e.BlockReason);
     }
 
     /// <summary>

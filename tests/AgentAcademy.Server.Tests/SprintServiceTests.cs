@@ -1220,4 +1220,272 @@ public class SprintServiceTests : IDisposable
         var reloaded = await _db.Sprints.FindAsync(sprint.Id);
         Assert.Equal("Active", reloaded!.Status);
     }
+
+    // ── Blocked Signal (P1.4 narrow scope) ───────────────────────
+
+    [Fact]
+    public async Task MarkBlocked_SetsBlockedAtAndReason_AndEmitsEvent()
+    {
+        var broadcaster = new ActivityBroadcaster();
+        var events = new List<ActivityEvent>();
+        broadcaster.Subscribe(e => events.Add(e));
+        var svc = new SprintService(_db, broadcaster, _settings, NullLogger<SprintService>.Instance);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        events.Clear();
+
+        var blocked = await svc.MarkSprintBlockedAsync(sprint.Id, "Self-eval failed twice");
+
+        Assert.NotNull(blocked.BlockedAt);
+        Assert.Equal("Self-eval failed twice", blocked.BlockReason);
+        Assert.Equal("Active", blocked.Status); // stays Active
+        Assert.Single(events);
+        Assert.Equal(ActivityEventType.SprintBlocked, events[0].Type);
+        Assert.Equal(sprint.Id, events[0].Metadata!["sprintId"]);
+        Assert.Equal("Self-eval failed twice", events[0].Metadata!["reason"]);
+    }
+
+    [Fact]
+    public async Task MarkBlocked_AlreadyBlocked_UpdatesReasonWithoutReEmittingEvent()
+    {
+        var broadcaster = new ActivityBroadcaster();
+        var events = new List<ActivityEvent>();
+        broadcaster.Subscribe(e => events.Add(e));
+        var svc = new SprintService(_db, broadcaster, _settings, NullLogger<SprintService>.Instance);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        await svc.MarkSprintBlockedAsync(sprint.Id, "Initial reason");
+        events.Clear();
+        var firstBlockedAt = (await _db.Sprints.FindAsync(sprint.Id))!.BlockedAt;
+
+        var updated = await svc.MarkSprintBlockedAsync(sprint.Id, "Updated reason");
+
+        Assert.Equal("Updated reason", updated.BlockReason);
+        Assert.Equal(firstBlockedAt, updated.BlockedAt); // timestamp preserved
+        Assert.Empty(events); // no second SprintBlocked event
+    }
+
+    [Fact]
+    public async Task MarkBlocked_RejectsEmptyReason()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _service.MarkSprintBlockedAsync(sprint.Id, ""));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _service.MarkSprintBlockedAsync(sprint.Id, "   "));
+    }
+
+    [Fact]
+    public async Task MarkBlocked_ThrowsOnUnknownSprint()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.MarkSprintBlockedAsync("does-not-exist", "reason"));
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task MarkBlocked_ThrowsWhenSprintCompleted()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.CompleteSprintAsync(sprint.Id, force: true);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.MarkSprintBlockedAsync(sprint.Id, "reason"));
+        Assert.Contains("status is Completed", ex.Message);
+    }
+
+    [Fact]
+    public async Task MarkBlocked_ThrowsWhenSprintCancelled()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.CancelSprintAsync(sprint.Id);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.MarkSprintBlockedAsync(sprint.Id, "reason"));
+        Assert.Contains("status is Cancelled", ex.Message);
+    }
+
+    [Fact]
+    public async Task Unblock_ClearsFlagAndEmitsEvent()
+    {
+        var broadcaster = new ActivityBroadcaster();
+        var events = new List<ActivityEvent>();
+        broadcaster.Subscribe(e => events.Add(e));
+        var svc = new SprintService(_db, broadcaster, _settings, NullLogger<SprintService>.Instance);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        await svc.MarkSprintBlockedAsync(sprint.Id, "Stuck");
+        events.Clear();
+
+        var unblocked = await svc.UnblockSprintAsync(sprint.Id);
+
+        Assert.Null(unblocked.BlockedAt);
+        Assert.Null(unblocked.BlockReason);
+        Assert.Single(events);
+        Assert.Equal(ActivityEventType.SprintUnblocked, events[0].Type);
+        Assert.Equal("Stuck", events[0].Metadata!["previousReason"]);
+    }
+
+    [Fact]
+    public async Task Unblock_NotBlocked_IsNoOp()
+    {
+        var broadcaster = new ActivityBroadcaster();
+        var events = new List<ActivityEvent>();
+        broadcaster.Subscribe(e => events.Add(e));
+        var svc = new SprintService(_db, broadcaster, _settings, NullLogger<SprintService>.Instance);
+
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        events.Clear();
+
+        var result = await svc.UnblockSprintAsync(sprint.Id);
+
+        Assert.Null(result.BlockedAt);
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public async Task Unblock_ThrowsWhenSprintCompleted()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.CompleteSprintAsync(sprint.Id, force: true);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.UnblockSprintAsync(sprint.Id));
+        Assert.Contains("status is Completed", ex.Message);
+    }
+
+    [Fact]
+    public async Task MarkBlocked_DoesNotChangeWorkspaceActiveSprintQuery()
+    {
+        // Blocked sprint should still occupy the workspace slot — a new sprint
+        // cannot be created until it's unblocked or terminated.
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.MarkSprintBlockedAsync(sprint.Id, "Stuck");
+
+        var active = await _service.GetActiveSprintAsync(TestWorkspace);
+        Assert.NotNull(active);
+        Assert.Equal(sprint.Id, active!.Id);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.CreateSprintAsync(TestWorkspace));
+        Assert.Contains("already has an active sprint", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetOverdueSprintsAsync_ExcludesBlockedSprints()
+    {
+        // Blocked sprints are explicitly waiting on a human — the timeout
+        // sweep must not auto-cancel them.
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        // Backdate creation so it's overdue against a 1-minute limit.
+        sprint.CreatedAt = DateTime.UtcNow.AddHours(-2);
+        await _db.SaveChangesAsync();
+
+        // Before blocking — should be in overdue list.
+        var overdueBeforeBlock = await _service.GetOverdueSprintsAsync(TimeSpan.FromMinutes(1));
+        Assert.Contains(overdueBeforeBlock, s => s.Id == sprint.Id);
+
+        // After blocking — should be excluded.
+        await _service.MarkSprintBlockedAsync(sprint.Id, "Stuck on self-eval");
+        var overdueAfterBlock = await _service.GetOverdueSprintsAsync(TimeSpan.FromMinutes(1));
+        Assert.DoesNotContain(overdueAfterBlock, s => s.Id == sprint.Id);
+
+        // After unblocking — should re-appear.
+        await _service.UnblockSprintAsync(sprint.Id);
+        var overdueAfterUnblock = await _service.GetOverdueSprintsAsync(TimeSpan.FromMinutes(1));
+        Assert.Contains(overdueAfterUnblock, s => s.Id == sprint.Id);
+    }
+
+    [Fact]
+    public async Task MarkBlocked_PersistsActivityEventToDatabase()
+    {
+        // QueueEvent + ExecuteUpdateAsync requires an explicit SaveChangesAsync
+        // to persist the activity row. Regression guard: the audit log must
+        // record SprintBlocked, not just the in-memory broadcaster.
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        await _service.MarkSprintBlockedAsync(sprint.Id, "Self-eval failed");
+
+        var persisted = await _db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.SprintBlocked))
+            .ToListAsync();
+        Assert.Single(persisted);
+    }
+
+    [Fact]
+    public async Task Unblock_PersistsActivityEventToDatabase()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.MarkSprintBlockedAsync(sprint.Id, "Stuck");
+
+        await _service.UnblockSprintAsync(sprint.Id);
+
+        var persisted = await _db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.SprintUnblocked))
+            .ToListAsync();
+        Assert.Single(persisted);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_OfBlockedSprint_ClearsBlockedFlag()
+    {
+        // Terminal transitions must clear BlockedAt/BlockReason — a Completed
+        // sprint that still claims to be "paused waiting on a human" is
+        // contradictory state.
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.MarkSprintBlockedAsync(sprint.Id, "Stuck");
+
+        await _service.CompleteSprintAsync(sprint.Id, force: true);
+
+        _db.ChangeTracker.Clear();
+        var reloaded = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.Equal("Completed", reloaded!.Status);
+        Assert.Null(reloaded.BlockedAt);
+        Assert.Null(reloaded.BlockReason);
+    }
+
+    [Fact]
+    public async Task CancelSprint_OfBlockedSprint_ClearsBlockedFlag()
+    {
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+        await _service.MarkSprintBlockedAsync(sprint.Id, "Stuck");
+
+        await _service.CancelSprintAsync(sprint.Id);
+
+        _db.ChangeTracker.Clear();
+        var reloaded = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.Equal("Cancelled", reloaded!.Status);
+        Assert.Null(reloaded.BlockedAt);
+        Assert.Null(reloaded.BlockReason);
+    }
+
+    [Fact]
+    public async Task GetTimedOutSignOffSprintsAsync_ExcludesBlockedSprints()
+    {
+        // A sprint can be Active + AwaitingSignOff + Blocked simultaneously.
+        // The sign-off timeout sweep must not auto-reject a blocked sprint —
+        // it's explicitly paused waiting on a human.
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        // Force into awaiting-sign-off with an old timestamp.
+        sprint.AwaitingSignOff = true;
+        sprint.SignOffRequestedAt = DateTime.UtcNow.AddHours(-2);
+        sprint.PendingStage = "Implementation";
+        await _db.SaveChangesAsync();
+
+        var beforeBlock = await _service.GetTimedOutSignOffSprintsAsync(TimeSpan.FromMinutes(1));
+        Assert.Contains(beforeBlock, s => s.Id == sprint.Id);
+
+        await _service.MarkSprintBlockedAsync(sprint.Id, "Need human input");
+
+        var afterBlock = await _service.GetTimedOutSignOffSprintsAsync(TimeSpan.FromMinutes(1));
+        Assert.DoesNotContain(afterBlock, s => s.Id == sprint.Id);
+
+        await _service.UnblockSprintAsync(sprint.Id);
+
+        var afterUnblock = await _service.GetTimedOutSignOffSprintsAsync(TimeSpan.FromMinutes(1));
+        Assert.Contains(afterUnblock, s => s.Id == sprint.Id);
+    }
 }

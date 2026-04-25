@@ -18,7 +18,7 @@ This document is brutally honest. Where the spec elsewhere in this repo says "Im
 | Agents work autonomously without human poking | ❌ Orchestrator is reactive only | 🔴 Blocks vision |
 | Self-evaluation ceremony at end of Implementation | ❌ No ceremony, no gate | 🔴 Blocks vision |
 | Final work report artifact at Final Synthesis | ✅ Enforced (CompleteSprintAsync gate) | ✅ Done |
-| Discord notification on idle / blocked | 🟡 Notification system exists, not wired to autonomy state | 🟡 Important |
+| Discord notification on idle / blocked | 🟢 Idle + explicit-blocker wired (P1.7 + P1.4 narrow). Auto-block (heuristic) pending P1.4-full. | 🟢 |
 | Rooms become read-only with agents offline when sprint completes | 🟡 Status enum may exist; agent-offline wiring unverified | 🟡 Important |
 | Cross-project background work | ❌ Orchestrator processes one workspace's queue at a time | 🟡 Important |
 | Forge as the sprint Planning entry point | 🟡 Forge exists; not invoked from sprint flow | 🟡 Important |
@@ -68,12 +68,11 @@ This document is brutally honest. Where the spec elsewhere in this repo says "Im
 **Original assessment was wrong**: This gap was closed before the spec was authored. P1.5 / P1.6 in the roadmap are marked done with code references.
 **Residual risk**: None for the enforcement contract. Future work could harden artifact *quality* (validation rules already exist in `SprintArtifactService.ValidateArtifactAsync`).
 
-### G7 — Idle/Blocked Notifications (🟡 Important)
+### G7 — Idle/Blocked Notifications (🟢 PARTIAL — Idle + Blocked-explicit closed; Blocked-auto pending P1.4-full)
 
 **Vision**: Discord ping when the team is blocked or out of work.
-**Code**: NotificationProvider exists. There is no signal that says "team is idle" to feed into it.
-**Evidence**: Needs verification of orchestrator state-emit hooks.
-**Impact**: Human has no out-of-band signal that their attention is needed.
+**Status**: Sprint-complete + team-idle paths shipped via P1.7 (`TeamIdleNotificationService`, `ActivityNotificationBroadcaster.SprintCompleted`/`SprintCancelled` mappings). Explicit-blocker path shipped via P1.4 narrow scope (2026-04-25): `ActivityEventType.SprintBlocked` is emitted by `SprintService.MarkSprintBlockedAsync` and mapped to `NotificationType.NeedsInput` "Sprint needs attention". `GetOverdueSprintsAsync` excludes blocked sprints so the timeout sweep no longer auto-cancels sprints waiting on a human. **Auto-blocking heuristic** (e.g. self-eval failed N times) still pending — depends on full P1.4 self-evaluation ceremony.
+**Evidence**: `SprintService.cs` (`MarkSprintBlockedAsync` / `UnblockSprintAsync` use atomic `ExecuteUpdateAsync` against `BlockedAt IS NULL` — concurrent block calls emit at most one event), `ActivityNotificationBroadcaster.cs` (`NotifiableEvents` includes `SprintBlocked`; mapping at `MapToNotification`), tests in `SprintServiceTests.cs` (12 new) + `SprintControllerTests.cs` (6 new) + `ActivityNotificationBroadcasterTests.cs` (`SprintBlocked` InlineData).
 
 ### G8 — Room Lifecycle Incomplete (✅ CLOSED by P1.8)
 
