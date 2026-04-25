@@ -677,6 +677,67 @@ public sealed class SprintArtifactServiceTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // ValidateArtifactContent — Schema hint in error messages
+    //
+    // Errors must include a compact JSON schema example so agents can
+    // self-correct on the next attempt instead of round-burning to guess
+    // the shape (regression for the room-burn surfaced in Sprint #2).
+    // ═══════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("RequirementsDocument", "\"Title\"", "\"InScope\"")]
+    [InlineData("SprintPlan", "\"Summary\"", "\"Phases\"")]
+    [InlineData("ValidationReport", "\"Verdict\"", "\"Findings\"")]
+    [InlineData("SprintReport", "\"Delivered\"", "\"Learnings\"")]
+    [InlineData("SelfEvaluationReport", "\"Items\"", "\"OverallVerdict\"")]
+    public void ValidateContent_MalformedJson_ErrorIncludesSchemaHint(
+        string type, string fieldA, string fieldB)
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => SprintArtifactService.ValidateArtifactContent(type, "not json at all"));
+
+        Assert.Contains("Invalid JSON", ex.Message);
+        Assert.Contains("Expected schema:", ex.Message);
+        Assert.Contains(fieldA, ex.Message);
+        Assert.Contains(fieldB, ex.Message);
+    }
+
+    [Fact]
+    public void ValidateContent_MissingField_ErrorIncludesSchemaHint()
+    {
+        var content = """{"Summary":"S"}"""; // SprintPlan missing Phases
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => SprintArtifactService.ValidateArtifactContent("SprintPlan", content));
+
+        Assert.Contains("Phases", ex.Message);
+        Assert.Contains("Expected schema:", ex.Message);
+        Assert.Contains("\"Deliverables\"", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateContent_OverflowRequirements_NoSchemaHint()
+    {
+        // OverflowRequirements is free-form — no schema, so no hint should leak in
+        // (it shouldn't error at all, but verify the hint helper returns empty).
+        var hint = SprintArtifactService.SchemaHintSuffix(ArtifactType.OverflowRequirements);
+        Assert.Equal(string.Empty, hint);
+    }
+
+    [Fact]
+    public void ValidateContent_UnknownType_NoSchemaHintAppended()
+    {
+        // Unknown-type errors short-circuit before the schema-augmenting catch and
+        // already list valid types — the schema hint must NOT be appended (there is
+        // no schema for an unknown type).
+        var ex = Assert.Throws<ArgumentException>(
+            () => SprintArtifactService.ValidateArtifactContent("NoSuchType", "{}"));
+
+        Assert.Contains("Unknown artifact type", ex.Message);
+        Assert.DoesNotContain("Expected schema:", ex.Message);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // GetSprintArtifactsAsync — Retrieval
     // ═══════════════════════════════════════════════════════════════
 

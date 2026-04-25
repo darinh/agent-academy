@@ -275,6 +275,8 @@ public record SprintReport(string Summary, List<string> Delivered,
 
 **Note**: These types are enforced at the storage layer by `ValidateArtifactContent`. When `StoreArtifactAsync` is called with a known artifact type, the JSON content must deserialize into the corresponding record with all required fields present and non-empty. OverflowRequirements is exempt (free-form). Unknown type strings are rejected.
 
+**Validation error messages** include a compact JSON schema example for the failed artifact type (e.g. `Expected schema: {"Summary":"...","Phases":[{"Name":"...","Description":"...","Deliverables":["..."]}],"OverflowRequirements":["..."]}`) so command-issuing agents can self-correct on the next attempt instead of guessing the shape. The hint is appended to both `JsonException` (malformed JSON) and `ArgumentException` (missing required field) failures; unknown-type errors continue to list valid types instead.
+
 ## Service Layer
 
 > **Source**: `src/AgentAcademy.Server/Services/SprintService.cs`, `src/AgentAcademy.Server/Services/SprintStageService.cs`, `src/AgentAcademy.Server/Services/SprintArtifactService.cs`, `src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs`
