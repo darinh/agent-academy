@@ -205,7 +205,7 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 
 (Future agents and the human add items here for triage. Do not silently work on these — they are not on the active roadmap until the human moves them up.)
 
-- (none yet)
+- **Per-archetype acceptance-criteria source for self-evaluation** (referenced by P1.4 design §10 deferred). Today self-eval reads acceptance criteria from `RequirementsDocument`. Future sprint archetypes (e.g., a refactor sprint with no Intake) would have no `RequirementsDocument`. A pluggable per-archetype criteria source would unblock self-eval for those archetypes. **Why not yet**: sprint archetypes are not a real concept in the codebase (zero references in `src/`); designing this now would be on top of a non-existent abstraction. Wait until at least one non-default archetype is proposed.
 
 ---
 
