@@ -42,7 +42,7 @@ public class BreakoutCompletionServiceTests
         _service = new BreakoutCompletionService(
             _scopeFactory,
             _catalog,
-            _executor,
+            _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             null!, // SpecManager — not reached in tested methods
             null!, // CommandPipeline — exception path fires before it's used
             null!, // AgentMemoryLoader — not reached in tested methods

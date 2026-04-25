@@ -45,6 +45,8 @@ public class SprintCommandHandlerTests : IDisposable
             .AddSingleton(typeof(ILogger<SprintService>), sp => NullLogger<SprintService>.Instance);
         services.AddSingleton(typeof(ILogger<SprintStageService>), sp => NullLogger<SprintStageService>.Instance);
         services.AddSingleton(typeof(ILogger<SprintArtifactService>), sp => NullLogger<SprintArtifactService>.Instance);
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp =>
+            new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<IAgentExecutor>()));
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(typeof(ILogger<ConversationSessionService>), sp => NullLogger<ConversationSessionService>.Instance);

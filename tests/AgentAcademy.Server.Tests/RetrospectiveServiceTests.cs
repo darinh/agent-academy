@@ -79,14 +79,14 @@ public class RetrospectiveServiceTests : IDisposable
         var digestService = new LearningDigestService(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _catalog,
-            _executor,
+            _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             _serviceProvider.GetRequiredService<CommandPipeline>(),
             NullLogger<LearningDigestService>.Instance);
 
         _service = new RetrospectiveService(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _catalog,
-            _executor,
+            _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             _serviceProvider.GetRequiredService<CommandPipeline>(),
             digestService,
             NullLogger<RetrospectiveService>.Instance);

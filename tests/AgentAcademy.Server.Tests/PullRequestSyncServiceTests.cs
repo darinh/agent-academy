@@ -123,6 +123,8 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
         sc.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
+        sc.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp =>
+            new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<IAgentExecutor>()));
         sc.AddScoped<ConversationSessionService>();
             sc.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         sc.AddScoped<TaskDependencyService>();
@@ -441,7 +443,7 @@ public class PrSyncHelperTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var settingsService = new SystemSettingsService(_db);
-        var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
+        var sessionService = new ConversationSessionService(_db, settingsService, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), sessionLogger);
         var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, _activityPublisher);
         _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
         _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher, taskDeps);

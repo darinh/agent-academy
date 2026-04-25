@@ -55,7 +55,7 @@ public class SprintControllerTests : IDisposable
         var activityPublisher = new ActivityPublisher(_db, activityBus);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionService = new ConversationSessionService(
-            _db, new SystemSettingsService(_db), executor,
+            _db, new SystemSettingsService(_db), executor, new TestDoubles.NoOpWatchdogAgentRunner(executor),
             NullLogger<ConversationSessionService>.Instance);
         var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);

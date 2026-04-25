@@ -105,6 +105,8 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp =>
+            new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<IAgentExecutor>()));
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<ConversationSessionQueryService>();
@@ -171,7 +173,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader = new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
         var breakoutCompletion = new BreakoutCompletionService(
-            scopeFactory, _catalog, _executor, new SpecManager(),
+            scopeFactory, _catalog, _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor), new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
         var breakoutLifecycle = new BreakoutLifecycleService(
@@ -272,7 +274,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var scopeFactory2 = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader2 = new AgentMemoryLoader(scopeFactory2, NullLogger<AgentMemoryLoader>.Instance);
         var breakoutCompletion2 = new BreakoutCompletionService(
-            scopeFactory2, _catalog, _executor, new SpecManager(),
+            scopeFactory2, _catalog, _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor), new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             memoryLoader2, NullLogger<BreakoutCompletionService>.Instance);
         var breakoutLifecycle2 = new BreakoutLifecycleService(

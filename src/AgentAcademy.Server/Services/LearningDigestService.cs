@@ -2,6 +2,7 @@ using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,7 @@ public sealed class LearningDigestService : Contracts.ILearningDigestService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
+    private readonly IWatchdogAgentRunner _watchdogRunner;
     private readonly CommandPipeline _commandPipeline;
     private readonly ILogger<LearningDigestService> _logger;
     private readonly SemaphoreSlim _digestLock = new(1, 1);
@@ -35,12 +37,14 @@ public sealed class LearningDigestService : Contracts.ILearningDigestService
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
         IAgentExecutor executor,
+        IWatchdogAgentRunner watchdogRunner,
         CommandPipeline commandPipeline,
         ILogger<LearningDigestService> logger)
     {
         _scopeFactory = scopeFactory;
         _catalog = catalog;
         _executor = executor;
+        _watchdogRunner = watchdogRunner;
         _commandPipeline = commandPipeline;
         _logger = logger;
     }
@@ -175,7 +179,7 @@ public sealed class LearningDigestService : Contracts.ILearningDigestService
         try
         {
             sessionStarted = true;
-            var response = await _executor.RunAsync(digestAgent, prompt, digestRoomId);
+            var response = await _watchdogRunner.RunAsync(digestAgent, prompt, digestRoomId);
 
             if (string.IsNullOrWhiteSpace(response))
             {

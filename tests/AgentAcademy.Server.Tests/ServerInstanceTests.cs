@@ -69,7 +69,7 @@ public class ServerInstanceTests : IDisposable
         var settingsService = new SystemSettingsService(_db);
         var executor = NSubstitute.Substitute.For<IAgentExecutor>();
         var sessionLogger = NullLogger<ConversationSessionService>.Instance;
-        var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
+        var sessionService = new ConversationSessionService(_db, settingsService, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), sessionLogger);
         var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher, taskDeps);
@@ -96,7 +96,7 @@ public class ServerInstanceTests : IDisposable
         var pipeline = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
         var memoryLoader = new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
         var breakoutCompletion = new BreakoutCompletionService(
-            scopeFactory, _catalog, executor, new SpecManager(), pipeline,
+            scopeFactory, _catalog, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), new SpecManager(), pipeline,
             memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, _catalog, executor, new SpecManager(),
@@ -695,7 +695,7 @@ public class RestartHistoryApiTests : IDisposable
         var executor = NSubstitute.Substitute.For<IAgentExecutor>();
         var settings = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(
-            _db, settings, executor, NullLogger<ConversationSessionService>.Instance);
+            _db, settings, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), NullLogger<ConversationSessionService>.Instance);
         var actBus = new ActivityBroadcaster();
         var actPub = new ActivityPublisher(_db, actBus);
         var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, actPub);

@@ -90,6 +90,8 @@ public static class AgentPipelineExtensions
         services.AddSingleton<AgentLivenessTracker>();
         services.AddSingleton<IAgentLivenessTracker>(sp => sp.GetRequiredService<AgentLivenessTracker>());
         services.AddHostedService<AgentWatchdogService>();
+        services.AddSingleton<WatchdogAgentRunner>();
+        services.AddSingleton<IWatchdogAgentRunner>(sp => sp.GetRequiredService<WatchdogAgentRunner>());
 
         services.AddSingleton<CopilotClientFactory>();
         services.AddSingleton<ICopilotClientFactory>(sp => sp.GetRequiredService<CopilotClientFactory>());

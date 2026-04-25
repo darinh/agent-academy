@@ -114,6 +114,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
         services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
 
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
         services.AddLogging(b => b.AddProvider(NullLoggerProvider.Instance));
 
         _serviceProvider = services.BuildServiceProvider();

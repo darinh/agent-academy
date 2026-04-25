@@ -68,7 +68,7 @@ public class CrashRecoveryServiceTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var settingsService = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(
-            _db, settingsService, executor,
+            _db, settingsService, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor),
             NullLogger<ConversationSessionService>.Instance);
 
         _agentLocations = new AgentLocationService(_db, _catalog, _activityPublisher);

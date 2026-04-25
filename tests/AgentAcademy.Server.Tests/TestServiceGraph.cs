@@ -73,7 +73,7 @@ internal sealed class TestServiceGraph : IDisposable
 
         SettingsService = new SystemSettingsService(Db);
         SessionService = new ConversationSessionService(
-            Db, SettingsService, Executor,
+            Db, SettingsService, Executor, new TestDoubles.NoOpWatchdogAgentRunner(Executor),
             NullLogger<ConversationSessionService>.Instance);
 
         MessageBroadcaster = new MessageBroadcaster();
@@ -146,7 +146,7 @@ internal sealed class TestServiceGraph : IDisposable
         var memoryLoader = new AgentMemoryLoader(
             scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
         var breakoutCompletion = new BreakoutCompletionService(
-            scopeFactory, Catalog, Executor, SpecManager, pipeline,
+            scopeFactory, Catalog, Executor, new TestDoubles.NoOpWatchdogAgentRunner(Executor), SpecManager, pipeline,
             memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, Catalog, Executor, SpecManager,

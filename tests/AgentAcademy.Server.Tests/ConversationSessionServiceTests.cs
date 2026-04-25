@@ -37,7 +37,7 @@ public class ConversationSessionServiceTests : IDisposable
         _settings = new SystemSettingsService(_db);
         _executor = Substitute.For<IAgentExecutor>();
         _service = new ConversationSessionService(
-            _db, _settings, _executor,
+            _db, _settings, _executor, new TestDoubles.NoOpWatchdogAgentRunner(_executor),
             NullLogger<ConversationSessionService>.Instance);
         _queryService = new ConversationSessionQueryService(_db);
     }

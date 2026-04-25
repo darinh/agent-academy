@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,7 @@ public sealed class RetrospectiveService : Contracts.IRetrospectiveService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
+    private readonly IWatchdogAgentRunner _watchdogRunner;
     private readonly CommandPipeline _commandPipeline;
     private readonly ILearningDigestService _digestService;
     private readonly ILogger<RetrospectiveService> _logger;
@@ -31,6 +33,7 @@ public sealed class RetrospectiveService : Contracts.IRetrospectiveService
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
         IAgentExecutor executor,
+        IWatchdogAgentRunner watchdogRunner,
         CommandPipeline commandPipeline,
         ILearningDigestService digestService,
         ILogger<RetrospectiveService> logger)
@@ -38,6 +41,7 @@ public sealed class RetrospectiveService : Contracts.IRetrospectiveService
         _scopeFactory = scopeFactory;
         _catalog = catalog;
         _executor = executor;
+        _watchdogRunner = watchdogRunner;
         _commandPipeline = commandPipeline;
         _digestService = digestService;
         _logger = logger;
@@ -100,7 +104,7 @@ public sealed class RetrospectiveService : Contracts.IRetrospectiveService
             try
             {
                 sessionStarted = true;
-                var response = await _executor.RunAsync(retroAgent, prompt, retroRoomId);
+                var response = await _watchdogRunner.RunAsync(retroAgent, prompt, retroRoomId);
 
                 if (string.IsNullOrWhiteSpace(response))
                 {

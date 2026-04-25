@@ -32,6 +32,7 @@ public sealed class RoundContextLoaderTests : IDisposable
         services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
         services.AddSingleton(Substitute.For<IAgentExecutor>());
         services.AddDomainServices();
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp => new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<AgentAcademy.Server.Services.IAgentExecutor>()));
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 

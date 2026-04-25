@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
+    private readonly IWatchdogAgentRunner _watchdogRunner;
     private readonly ISpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
     private readonly IAgentMemoryLoader _memoryLoader;
@@ -27,6 +29,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
         IAgentExecutor executor,
+        IWatchdogAgentRunner watchdogRunner,
         ISpecManager specManager,
         CommandPipeline commandPipeline,
         IAgentMemoryLoader memoryLoader,
@@ -35,6 +38,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
         _scopeFactory = scopeFactory;
         _catalog = catalog;
         _executor = executor;
+        _watchdogRunner = watchdogRunner;
         _specManager = specManager;
         _commandPipeline = commandPipeline;
         _memoryLoader = memoryLoader;
@@ -53,7 +57,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
     {
         try
         {
-            return await _executor.RunAsync(agent, prompt, roomId, workspacePath);
+            return await _watchdogRunner.RunAsync(agent, prompt, roomId, workspacePath: workspacePath);
         }
         catch (AgentQuotaExceededException ex)
         {

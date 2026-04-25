@@ -68,7 +68,7 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
         var memoryLoader = new AgentMemoryLoader(
             scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
         var completion = new BreakoutCompletionService(
-            scopeFactory, _catalog, executor, specManager, pipeline,
+            scopeFactory, _catalog, executor, new TestDoubles.NoOpWatchdogAgentRunner(executor), specManager, pipeline,
             memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
         _breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, _catalog, executor, specManager,
@@ -117,6 +117,8 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
         services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
+        services.AddSingleton<AgentAcademy.Server.Services.AgentWatchdog.IWatchdogAgentRunner>(sp =>
+            new TestDoubles.NoOpWatchdogAgentRunner(sp.GetRequiredService<IAgentExecutor>()));
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<SystemSettingsService>();

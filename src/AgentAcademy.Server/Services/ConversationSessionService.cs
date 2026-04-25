@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,7 @@ public sealed class ConversationSessionService : IConversationSessionService
     private readonly AgentAcademyDbContext _db;
     private readonly ISystemSettingsService _settings;
     private readonly IAgentExecutor _executor;
+    private readonly IWatchdogAgentRunner _watchdogRunner;
     private readonly ILogger<ConversationSessionService> _logger;
 
     /// <summary>
@@ -42,11 +44,13 @@ public sealed class ConversationSessionService : IConversationSessionService
         AgentAcademyDbContext db,
         ISystemSettingsService settings,
         IAgentExecutor executor,
+        IWatchdogAgentRunner watchdogRunner,
         ILogger<ConversationSessionService> logger)
     {
         _db = db;
         _settings = settings;
         _executor = executor;
+        _watchdogRunner = watchdogRunner;
         _logger = logger;
     }
 
@@ -437,7 +441,7 @@ public sealed class ConversationSessionService : IConversationSessionService
                 return BuildFallbackSummary(messageLines.Count, senderNames);
             }
 
-            var summary = await _executor.RunAsync(SummarizerAgent, prompt, null);
+            var summary = await _watchdogRunner.RunAsync(SummarizerAgent, prompt, null);
             _logger.LogDebug("Generated summary for session {SessionId}: {Length} chars",
                 session.Id, summary.Length);
 
