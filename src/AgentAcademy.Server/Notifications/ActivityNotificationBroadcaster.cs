@@ -30,6 +30,10 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
         ActivityEventType.CommandExecuted,
         ActivityEventType.CommandDenied,
         ActivityEventType.CommandFailed,
+        // P1.7 — sprint lifecycle: notify the human when a sprint wraps up so
+        // they know to look at the report (or, if cancelled, why it stopped).
+        ActivityEventType.SprintCompleted,
+        ActivityEventType.SprintCancelled,
     };
 
     public ActivityNotificationBroadcaster(
@@ -164,6 +168,14 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
             ActivityEventType.CommandFailed => (
                 Type: NotificationType.Error,
                 Title: $"Command failed{FormatActor(evt.ActorId)}"
+            ),
+            ActivityEventType.SprintCompleted => (
+                Type: NotificationType.TaskComplete,
+                Title: "Sprint completed"
+            ),
+            ActivityEventType.SprintCancelled => (
+                Type: NotificationType.Error,
+                Title: "Sprint cancelled"
             ),
             _ => ((NotificationType Type, string Title)?)null
         };

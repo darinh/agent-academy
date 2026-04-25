@@ -177,9 +177,10 @@ public sealed class ServiceRegistrationWiringTests
             .Where(sd => sd.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService))
             .ToList();
 
-        // ActivityHubBroadcaster, ActivityNotificationBroadcaster, NotificationRestoreService,
-        // CopilotAuthMonitorService, PullRequestSyncService, SprintTimeoutService, SprintSchedulerService
-        Assert.Equal(7, hostedServiceRegistrations.Count);
+        // ActivityHubBroadcaster, ActivityNotificationBroadcaster, TeamIdleNotificationService,
+        // NotificationRestoreService, CopilotAuthMonitorService, PullRequestSyncService,
+        // SprintTimeoutService, SprintSchedulerService
+        Assert.Equal(8, hostedServiceRegistrations.Count);
     }
 
     [Fact]
