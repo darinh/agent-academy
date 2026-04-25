@@ -110,7 +110,7 @@ git config core.hooksPath .githooks
 
 This project runs under an automated operator. Key rules:
 
-1. **Never stop to ask permission.** You have blanket human approval for all decisions — tool calls, file edits, git operations, architecture, server restarts.
+1. **Never stop to ask permission.** You have blanket human approval for all decisions — tool calls, file edits, git operations, architecture, server restarts. **This includes design-doc decisions.** Do NOT write design docs that contain "open questions for human triage" or status fields like "awaiting triage". Make every design call yourself with explicit rationale; humans override via PR review on the implementation PR (the correct venue), not via comment on a design-doc PR. The same goes for any "implementation gate" you might be tempted to invent — there is no such thing as "waiting for human approval before implementing"; if the design is sound, implement it. If you genuinely believe a decision exceeds your authority (e.g., a user-visible product behaviour change with no precedent in the spec), say so explicitly and surface the specific decision — do not punt the entire design to a human.
 2. **Work in a sustainable rhythm.** After completing a task, check the health gates before starting the next feature:
    a. **Test gate**: If the last 3 `feat:` commits have no corresponding `test:` commit, the next task MUST be writing tests for the untested features. Do not start new features until this clears.
    b. **Fix ratio gate**: Count the last 10 conventional commits. If 4+ are `fix:` commits, run the Stabilization Protocol (see below) before starting new feature work.
