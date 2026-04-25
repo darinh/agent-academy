@@ -14,10 +14,10 @@ This document is brutally honest. Where the spec elsewhere in this repo says "Im
 |-------------------|--------|----------|
 | Sprint as a six-phase lifecycle with phases that *advance autonomously* | ❌ Missing autonomous advancement | 🔴 Blocks vision |
 | Agents push back on incoherent scope at Intake | ❌ Not in agent preambles | 🔴 Blocks vision |
-| Tracking artifact produced at Planning | 🟡 Concept exists, not enforced | 🟡 Important |
+| Tracking artifact produced at Planning | ✅ Enforced (SprintStageService gate) | ✅ Done |
 | Agents work autonomously without human poking | ❌ Orchestrator is reactive only | 🔴 Blocks vision |
 | Self-evaluation ceremony at end of Implementation | ❌ No ceremony, no gate | 🔴 Blocks vision |
-| Final work report artifact at Final Synthesis | 🟡 Artifact concept exists, not enforced | 🟡 Important |
+| Final work report artifact at Final Synthesis | ✅ Enforced (CompleteSprintAsync gate) | ✅ Done |
 | Discord notification on idle / blocked | 🟡 Notification system exists, not wired to autonomy state | 🟡 Important |
 | Rooms become read-only with agents offline when sprint completes | 🟡 Status enum may exist; agent-offline wiring unverified | 🟡 Important |
 | Cross-project background work | ❌ Orchestrator processes one workspace's queue at a time | 🟡 Important |
@@ -61,12 +61,12 @@ This document is brutally honest. Where the spec elsewhere in this repo says "Im
 **Evidence**: Needs a focused investigation — call out in roadmap.
 **Impact**: User cannot leave the UI on one project while expecting other projects to progress.
 
-### G6 — Artifact Production Not Enforced (🟡 Important)
+### G6 — Artifact Production Not Enforced (🟡 Important) [RESOLVED 2026-04-25]
 
 **Vision**: Tracking artifact at Planning, work report at Final Synthesis. Sprints without these are incomplete.
-**Code**: Artifact creation is a command agents *can* call but are not *required* to call to advance stages.
-**Evidence**: Stage transitions don't validate artifact presence.
-**Impact**: Sprints can "complete" with no record of what was ordered or what was delivered.
+**Code (re-checked 2026-04-25)**: Stage gates ARE enforced. `SprintStageService.RequiredArtifactByStage` requires `RequirementsDocument` to leave Intake, `SprintPlan` to leave Planning, `ValidationReport` to leave Validation, and `SprintReport` to complete (in `SprintService.CompleteSprintAsync`). The `force=true` override exists for humans only; agents cannot bypass via the orchestration path.
+**Original assessment was wrong**: This gap was closed before the spec was authored. P1.5 / P1.6 in the roadmap are marked done with code references.
+**Residual risk**: None for the enforcement contract. Future work could harden artifact *quality* (validation rules already exist in `SprintArtifactService.ValidateArtifactAsync`).
 
 ### G7 — Idle/Blocked Notifications (🟡 Important)
 

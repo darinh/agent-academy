@@ -87,7 +87,7 @@
 
 **Recommend**: write a design doc; consider this the *defining* feature of the autonomy loop because it's what makes the agents *trustworthy* without supervision.
 
-### P1.5 — Tracking Artifact Required at Planning [DRAFT]
+### P1.5 — Tracking Artifact Required at Planning [DONE — pre-existing]
 
 **Closes gap**: G6 partial.
 **Risk**: 🟡.
@@ -95,13 +95,17 @@
 
 **What**: Sprint cannot advance from Planning to Implementation unless a tracking artifact exists for it. Block the stage transition if absent; surface a clear error to the orchestrator so the agents know they must produce one.
 
-### P1.6 — Final Work Report Artifact Required at FinalSynthesis [DRAFT]
+**Status**: Already implemented at the time the roadmap was authored. `SprintStageService.RequiredArtifactByStage["Planning"] = "SprintPlan"` is enforced in `AdvanceStageAsync` (cannot be bypassed by `force=true`). `SprintPlanDocument` (`Sprints.cs:63-66`) is the tracking artifact (phases, deliverables, overflow). Verified by `SprintServiceTests.AdvanceStage_ThrowsWithoutRequiredArtifact`.
+
+### P1.6 — Final Work Report Artifact Required at FinalSynthesis [DONE — pre-existing]
 
 **Closes gap**: G6 partial.
 **Risk**: 🟡.
 **Estimated effort**: ~0.5 day.
 
 **What**: Sprint cannot transition to Completed unless a final work report artifact exists. Same enforcement pattern as P1.5.
+
+**Status**: Already implemented at the time the roadmap was authored. `SprintService.CompleteSprintAsync` (`SprintService.cs:229-241`) refuses to mark a sprint Completed unless a `SprintReport` artifact exists at FinalSynthesis. `force=true` allows human override (intentional — agents cannot bypass).
 
 ### P1.7 — Discord Notification on Idle / Blocked / Sprint Complete [DRAFT]
 
@@ -211,8 +215,8 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 | P1.2 | pending | — | — | Design doc required first |
 | P1.3 | done | anvil | feat/p1-3-stage-advance-announce | Live-verified 2026-04-25: Sprint #2 Intake→Planning via /approve-advance posted "➡️ Sprint #2 advanced (user-approved)" to 6 active rooms; Aristotle responded in +35s. Includes regression test + targetRoomIds snapshot for FinalSynthesis room-completion edge case (caught by adversarial review). |
 | P1.4 | pending | — | — | Design doc required first |
-| P1.5 | pending | — | — | |
-| P1.6 | pending | — | — | |
+| P1.5 | done | 2026-04-25 | 2026-04-25 | **Already implemented** prior to roadmap authoring. `SprintStageService.RequiredArtifactByStage["Planning"] = "SprintPlan"` (SprintStageService.cs:44) is enforced in `AdvanceStageAsync` (SprintStageService.cs:112-123), even when `force=true`. SprintPlanDocument (Sprints.cs:63-66) IS the tracking artifact: Summary + Phases (Name/Description/Deliverables) + OverflowRequirements. Covered by `SprintServiceTests.AdvanceStage_ThrowsWithoutRequiredArtifact` and the multi-stage `AdvanceStage_ThrowsAtFinalStage` flow. Gap analysis G6 was stale at authoring. |
+| P1.6 | done | 2026-04-25 | 2026-04-25 | **Already implemented** prior to roadmap authoring. `SprintService.CompleteSprintAsync` (SprintService.cs:229-241) refuses to mark a sprint Completed unless a `SprintReport` artifact exists at FinalSynthesis. The `force=true` override is intentional (humans can override; agents cannot). SprintReport (Sprints.cs:78-82) carries Summary + Delivered + Learnings + OverflowRequirements — i.e., the work-report contract. Gap analysis G6 was stale at authoring. |
 | P1.7 | pending | — | — | |
 | P1.8 | pending | — | — | Investigation first |
 | P1.9 | pending | — | — | Acceptance run, after P1.1–P1.8 |
