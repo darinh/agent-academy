@@ -588,6 +588,55 @@ public class SprintStageServiceTests : IDisposable
         Assert.Contains("\"currentStage\":\"Discussion\"", evt.MetadataJson);
     }
 
+    // ── P1.2 Self-Drive Counter Reset on Stage Advance ──────────
+
+    [Fact]
+    public async Task ApproveAdvance_ResetsRoundsThisStageAndSelfDriveContinuations()
+    {
+        // Seed sprint with non-zero per-stage counters (mid-stage state).
+        await SeedSprintAsync(stage: "Planning", awaitingSignOff: true, pendingStage: "Discussion");
+        var sprint = await _db.Sprints.FindAsync("sprint-1");
+        sprint!.RoundsThisSprint = 7;
+        sprint.RoundsThisStage = 5;
+        sprint.SelfDriveContinuations = 3;
+        await _db.SaveChangesAsync();
+
+        await _service.ApproveAdvanceAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var reloaded = await _db.Sprints.FindAsync("sprint-1");
+        Assert.NotNull(reloaded);
+        Assert.Equal("Discussion", reloaded.CurrentStage);
+        Assert.Equal(0, reloaded.RoundsThisStage);            // P1.2: reset on stage commit
+        Assert.Equal(0, reloaded.SelfDriveContinuations);     // P1.2: reset on stage commit
+        // Total sprint counter is intentionally NOT reset — it's the
+        // sprint-wide cap and survives stage transitions.
+        Assert.Equal(7, reloaded.RoundsThisSprint);
+    }
+
+    [Fact]
+    public async Task AdvanceStageForce_ResetsRoundsThisStageAndSelfDriveContinuations()
+    {
+        await SeedSprintAsync(stage: "Discussion");
+        await SeedArtifactAsync("sprint-1", "Discussion", "DiscussionMinutes");
+        var sprint = await _db.Sprints.FindAsync("sprint-1");
+        sprint!.RoundsThisSprint = 12;
+        sprint.RoundsThisStage = 8;
+        sprint.SelfDriveContinuations = 4;
+        await _db.SaveChangesAsync();
+
+        // force=true skips sign-off and commits immediately.
+        await _service.AdvanceStageAsync("sprint-1", force: true);
+
+        _db.ChangeTracker.Clear();
+        var reloaded = await _db.Sprints.FindAsync("sprint-1");
+        Assert.NotNull(reloaded);
+        Assert.Equal("Validation", reloaded.CurrentStage);
+        Assert.Equal(0, reloaded.RoundsThisStage);
+        Assert.Equal(0, reloaded.SelfDriveContinuations);
+        Assert.Equal(12, reloaded.RoundsThisSprint);
+    }
+
     // ── RejectAdvanceAsync ──────────────────────────────────────
 
     [Fact]

@@ -26,12 +26,12 @@ This document is brutally honest. Where the spec elsewhere in this repo says "Im
 
 ## Detailed Gaps
 
-### G1 — No Autonomous Wake-Up (🔴 Blocks vision)
+### G1 — No Autonomous Wake-Up (🟢 CLOSED by P1.2)
 
 **Vision**: Agents continue working when the human is away.
-**Code**: `AgentOrchestrator.ProcessQueueAsync` only fires when a message-receive code path explicitly enqueues. There is no tick loop, no cron-driven wake-up, no "sprint advanced → next round" trigger.
-**Evidence**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs` line 124.
-**Impact**: This is *the* gap. Without it, every other sprint feature is theatre.
+**Status**: Closed 2026-04-25. `ConversationRoundRunner` now invokes `ISelfDriveDecisionService.DecideAsync` after every round; when a sprint is active and all 12 gates pass, the orchestrator self-enqueues a `SystemContinuation` (separate queue path with dedupe vs. `HumanMessage` and pre-dispatch sprint state re-check). HALT-by-blocking covers round caps (per-sprint + per-stage), consecutive-continuation cap, and cost guard. Notification is Internal-only — no external Discord noise for routine autonomous rounds.
+**Evidence**: `src/AgentAcademy.Server/Services/SelfDriveDecisionService.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:177` (`TryEnqueueSystemContinuation`), `src/AgentAcademy.Server/Services/ConversationRoundRunner.cs:264` (counter bump + decision invocation), `specs/006-orchestrator/spec.md` Self-Drive Continuation section, `specs/013-sprint-system/spec.md` SprintEntity rounds-fields, `specs/100-product-vision/p1-2-self-drive-design.md`.
+**Residual**: Live verification of a long-running sprint (multi-hour autonomous run with cap-tripping) is the next maturation step; mechanism is in place and unit-tested across all 12 decision branches and all 4 dedupe combinations.
 
 ### G2 — Sprint Creation Does Not Dispatch (✅ CLOSED by P1.1)
 

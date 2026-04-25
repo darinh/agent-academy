@@ -150,6 +150,16 @@ public static class AgentPipelineExtensions
         // slot exists for the future cost-tracking implementation to swap in
         // without touching the decision-tree wiring.
         services.AddSingleton<Contracts.ICostGuard, NoOpCostGuard>();
+
+        // P1.2 §13 step 5: Self-drive decision service. Singleton — must
+        // not inject scoped services directly; resolves them via
+        // IServiceScopeFactory per-call. Bound config from
+        // Orchestrator:SelfDrive section. Method-scoped binding via
+        // OptionsBuilder so we don't need IConfiguration in this signature.
+        services.AddOptions<SelfDriveOptions>()
+            .Configure<Microsoft.Extensions.Configuration.IConfiguration>((opts, cfg) =>
+                cfg.GetSection(SelfDriveOptions.SectionName).Bind(opts));
+        services.AddSingleton<Contracts.ISelfDriveDecisionService, SelfDriveDecisionService>();
         services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
         services.AddSingleton<OrchestratorDispatchService>();

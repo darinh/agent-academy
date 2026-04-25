@@ -159,6 +159,12 @@ public sealed class SprintStageService : ISprintStageService
 
         var previousStage = sprint.CurrentStage;
         sprint.CurrentStage = Stages[currentIndex + 1];
+        // P1.2: reset per-stage self-drive counters when stage changes so
+        // the new stage starts with a fresh round/continuation budget.
+        // Otherwise rounds spent in Planning would count toward the
+        // Implementation per-stage cap, causing premature halts.
+        sprint.RoundsThisStage = 0;
+        sprint.SelfDriveContinuations = 0;
 
         QueueEvent(ActivityEventType.SprintStageAdvanced,
             $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}" + (force ? " (forced)" : ""),
@@ -216,6 +222,10 @@ public sealed class SprintStageService : ISprintStageService
         sprint.AwaitingSignOff = false;
         sprint.PendingStage = null;
         sprint.SignOffRequestedAt = null;
+        // P1.2: reset per-stage self-drive counters when stage changes
+        // (mirrors the AdvanceStageAsync path — see rationale there).
+        sprint.RoundsThisStage = 0;
+        sprint.SelfDriveContinuations = 0;
 
         QueueEvent(ActivityEventType.SprintStageAdvanced,
             $"Sprint #{sprint.Number} advanced (user approved): {previousStage} → {sprint.CurrentStage}",

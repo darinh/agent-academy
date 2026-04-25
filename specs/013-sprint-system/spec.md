@@ -142,6 +142,13 @@ The schedule management form lives in `AdvancedTab.tsx` below the Sprint Automat
 | `AwaitingSignOff` | `bool` | True when waiting for human approval to advance |
 | `PendingStage` | `string?` | The stage that will become current if sign-off is approved |
 | `SignOffRequestedAt` | `DateTime?` | UTC timestamp when `AwaitingSignOff` became true |
+| `RoundsThisSprint` | `int` | Total orchestrator rounds executed in this sprint (any room, any trigger). Bumped by `IncrementRoundCountersAsync`. Cap: `MaxRoundsOverride ?? Orchestrator:SelfDrive:MaxRoundsPerSprint` (default 50). Tripping the cap blocks the sprint with reason `"Round cap reached: N/M"`. |
+| `RoundsThisStage` | `int` | Rounds executed since entering the current stage. Reset to 0 in `SprintStageService.AdvanceStageAsync` and `ApproveAdvanceAsync`. Cap: `Orchestrator:SelfDrive:MaxRoundsPerStage` (default 20). |
+| `SelfDriveContinuations` | `int` | Consecutive `SystemContinuation` rounds since the last human checkpoint. Bumped only when `wasSelfDriveContinuation: true`; reset to 0 on every human message in any room of the sprint AND on every stage advance. Cap: `Orchestrator:SelfDrive:MaxConsecutiveSelfDriveContinuations` (default 8). |
+| `LastRoundCompletedAt` | `DateTime?` | UTC timestamp of the most recent round completion. Used by `SelfDriveDecisionService` to enforce `MinIntervalBetweenContinuationsMs` (default 5s) via delayed enqueue. |
+| `MaxRoundsOverride` | `int?` | Optional per-sprint override for `MaxRoundsPerSprint`. Lets one-off sprints request a tighter or looser sprint-level cap without changing global config. |
+| `BlockedAt` | `DateTime?` | UTC timestamp when the sprint was marked blocked (cap tripped, cost guard, or manual block). |
+| `BlockReason` | `string?` | Human-readable reason for the block. |
 | `CreatedAt` | `DateTime` | UTC creation timestamp |
 | `CompletedAt` | `DateTime?` | UTC completion/cancellation timestamp |
 

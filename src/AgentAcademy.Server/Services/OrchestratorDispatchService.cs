@@ -19,13 +19,20 @@ public sealed class OrchestratorDispatchService : IOrchestratorDispatchService
         _dmRouter = dmRouter;
     }
 
-    public Task DispatchAsync(string roomId, string? targetAgentId, CancellationToken cancellationToken = default)
+    public Task DispatchAsync(
+        string roomId,
+        string? targetAgentId,
+        QueueItemKind kind = QueueItemKind.HumanMessage,
+        CancellationToken cancellationToken = default)
     {
         if (targetAgentId is { } recipientAgentId)
         {
             return _dmRouter.RouteAsync(recipientAgentId);
         }
 
-        return _roundRunner.RunRoundsAsync(roomId, cancellationToken);
+        return _roundRunner.RunRoundsAsync(
+            roomId,
+            wasSelfDriveContinuation: kind == QueueItemKind.SystemContinuation,
+            cancellationToken: cancellationToken);
     }
 }

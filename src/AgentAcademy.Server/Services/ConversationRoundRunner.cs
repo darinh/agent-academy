@@ -18,17 +18,20 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
     private readonly IAgentTurnRunner _turnRunner;
+    private readonly ISelfDriveDecisionService? _selfDriveDecision;
     private readonly ILogger<ConversationRoundRunner> _logger;
 
     public ConversationRoundRunner(
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
         IAgentTurnRunner turnRunner,
-        ILogger<ConversationRoundRunner> logger)
+        ILogger<ConversationRoundRunner> logger,
+        ISelfDriveDecisionService? selfDriveDecision = null)
     {
         _scopeFactory = scopeFactory;
         _catalog = catalog;
         _turnRunner = turnRunner;
+        _selfDriveDecision = selfDriveDecision;
         _logger = logger;
     }
 
@@ -36,7 +39,10 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
     /// Runs up to <see cref="MaxRoundsPerTrigger"/> conversation rounds for
     /// the given room. Stops early if all agents PASS or no active task remains.
     /// </summary>
-    public async Task<RoundRunOutcome> RunRoundsAsync(string roomId, CancellationToken cancellationToken = default)
+    public async Task<RoundRunOutcome> RunRoundsAsync(
+        string roomId,
+        bool wasSelfDriveContinuation = false,
+        CancellationToken cancellationToken = default)
     {
         // Outer accumulators: any non-PASS across the inner loop, plus the
         // count of inner rounds we actually executed. Both feed RoundRunOutcome
@@ -261,7 +267,7 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                 await sprintService.IncrementRoundCountersAsync(
                     sprintIdAtRunStart,
                     innerRoundsExecuted,
-                    wasSelfDriveContinuation: false,
+                    wasSelfDriveContinuation: wasSelfDriveContinuation,
                     completedAt: DateTime.UtcNow,
                     // Pass CancellationToken.None: rounds already executed
                     // and counters MUST persist. If we forwarded the trigger
@@ -280,7 +286,39 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             }
         }
 
-        return new RoundRunOutcome(anyRoundHadNonPass, innerRoundsExecuted);
+        var roundOutcome = new RoundRunOutcome(anyRoundHadNonPass, innerRoundsExecuted);
+
+        // P1.2 §13 step 7–9: self-drive decision. Run AFTER the counter
+        // bump so the decision service reads freshly-persisted counters.
+        // Pass CancellationToken.None — the trigger CT is about to be
+        // disposed; the decision service owns its own lifetime via the
+        // orchestrator. Fail-open inside the helper.
+        await InvokeSelfDriveDecisionAsync(
+            roomId, sprintIdAtRunStart, roundOutcome, CancellationToken.None);
+
+        return roundOutcome;
+    }
+
+    /// <summary>
+    /// Internal helper: invoke the self-drive decision service after the
+    /// counter bump. Wrapped in a fail-open try/catch — a decision-service
+    /// crash MUST NOT propagate; the round trigger has already succeeded.
+    /// Public for testability via internals-visible-to or intentional reuse.
+    /// </summary>
+    private async Task InvokeSelfDriveDecisionAsync(
+        string roomId, string? capturedSprintId, RoundRunOutcome outcome, CancellationToken ct)
+    {
+        if (_selfDriveDecision is null) return;
+        try
+        {
+            await _selfDriveDecision.DecideAsync(roomId, capturedSprintId, outcome, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Self-drive decision invocation failed for room {RoomId} sprint {SprintId}; idling",
+                roomId, capturedSprintId);
+        }
     }
 
     private AgentDefinition? FindPlanner() =>
