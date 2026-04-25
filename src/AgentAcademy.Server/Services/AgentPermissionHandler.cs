@@ -1,4 +1,5 @@
 using GitHub.Copilot.SDK;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -78,13 +79,25 @@ public static class AgentPermissionHandler
     /// implied by the registered tools (see <see cref="ToolImpliedKinds"/>).
     /// </param>
     /// <param name="logger">Logger for diagnostics.</param>
+    /// <param name="livenessTracker">
+    /// Watchdog liveness tracker. The handler attributes approve/deny events
+    /// to the in-flight turn by SDK <c>SessionId</c> (resolved via the
+    /// tracker's session→turn map maintained by <c>CopilotSdkSender</c>).
+    /// Approvals call <see cref="IAgentLivenessTracker.NoteProgressBySessionId"/>
+    /// — they count as forward progress. Denials call
+    /// <see cref="IAgentLivenessTracker.IncrementDenialBySessionId"/> — they
+    /// bump the per-turn denial counter without resetting the stall timer,
+    /// so a denial storm trips the watchdog's denial-count trigger.
+    /// </param>
     public static PermissionRequestHandler Create(
         IReadOnlySet<string> registeredToolNames,
-        ILogger logger)
+        ILogger logger,
+        IAgentLivenessTracker livenessTracker)
     {
         // Per-handler state. Captured by the returned closure, so it is
         // scoped to exactly one Copilot session and GCs with that session.
         var state = new DenialState();
+        var tracker = livenessTracker;
 
         // Pre-compute the effective safe-kinds set for this session by
         // unioning the always-safe kinds with the kinds implied by every
@@ -106,6 +119,7 @@ public static class AgentPermissionHandler
             // (same as ApproveAll — nothing to gate).
             if (registeredToolNames.Count == 0)
             {
+                tracker.NoteProgressBySessionId(invocation.SessionId, "perm:approve:" + request.Kind);
                 return Task.FromResult(new PermissionRequestResult
                 {
                     Kind = PermissionRequestResultKind.Approved
@@ -116,6 +130,7 @@ public static class AgentPermissionHandler
             // tools. Anything else (e.g., "url" with no network tool) is denied.
             if (effectiveSafeKinds.Contains(request.Kind))
             {
+                tracker.NoteProgressBySessionId(invocation.SessionId, "perm:approve:" + request.Kind);
                 logger.LogDebug(
                     "Approved permission: Kind={Kind}, Session={SessionId}",
                     request.Kind, invocation.SessionId);
@@ -128,6 +143,12 @@ public static class AgentPermissionHandler
 
             var sessionId = invocation.SessionId ?? "unknown";
             var count = Interlocked.Increment(ref state.Count);
+
+            // Bump the per-turn denial counter on the tracker. The watchdog
+            // uses this for the denial-storm stall trigger. If no turn is
+            // linked (e.g., session priming, before LinkSession), this is
+            // a no-op — by design.
+            tracker.IncrementDenialBySessionId(invocation.SessionId, request.Kind);
 
             if (count <= 3)
             {

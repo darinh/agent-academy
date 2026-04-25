@@ -124,7 +124,7 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
                         _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                         NullLogger<LlmUsageTracker>.Instance),
                     NullLogger<AgentQuotaService>.Instance),
-                new ActivityBroadcaster()),
+                new ActivityBroadcaster(), new TestDoubles.NoOpAgentLivenessTracker()),
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _serviceProvider.GetRequiredService<NotificationManager>(),
             Substitute.For<IAgentToolRegistry>(),
@@ -137,7 +137,7 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
                     _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                     NullLogger<LlmUsageTracker>.Instance),
                 NullLogger<AgentQuotaService>.Instance),
-            _serviceProvider.GetRequiredService<AgentCatalogOptions>());
+            _serviceProvider.GetRequiredService<AgentCatalogOptions>(), new TestDoubles.NoOpAgentLivenessTracker());
     }
 
     [Fact]

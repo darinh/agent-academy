@@ -1077,7 +1077,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         public Task MarkAuthDegradedAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task MarkAuthOperationalAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task<string> RunAsync(AgentDefinition agent, string prompt, string? roomId,
-            string? workspacePath = null, CancellationToken ct = default)
+            string? workspacePath = null, CancellationToken ct = default, string? turnId = null)
             => Task.FromResult("stub response");
         public Task InvalidateSessionAsync(string agentId, string? roomId) => Task.CompletedTask;
         public Task InvalidateRoomSessionsAsync(string roomId) => Task.CompletedTask;

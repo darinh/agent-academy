@@ -222,7 +222,7 @@ public class RetrospectiveServiceTests : IDisposable
         // No exception, no executor calls
         await _executor.DidNotReceive().RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -233,7 +233,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         await _executor.DidNotReceive().RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         await _executor.DidNotReceive().RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -255,7 +255,7 @@ public class RetrospectiveServiceTests : IDisposable
         _executor.RunAsync(
             Arg.Do<AgentDefinition>(a => capturedAgent = a),
             Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Retrospective summary here.");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -278,7 +278,7 @@ public class RetrospectiveServiceTests : IDisposable
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(),
             Arg.Do<string?>(r => capturedRoomId = r),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -295,7 +295,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("This went well. JWT auth was straightforward.");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -318,7 +318,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: lesson
@@ -348,7 +348,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: gotcha
@@ -398,7 +398,7 @@ public class RetrospectiveServiceTests : IDisposable
         // Should NOT have called the executor (idempotency guard)
         await _executor.DidNotReceive().RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -408,7 +408,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -426,7 +426,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -442,7 +442,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns<string>(x => throw new InvalidOperationException("LLM connection failed"));
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -458,7 +458,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Retrospective completed.");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -481,7 +481,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns<string>(x => throw new InvalidOperationException("LLM connection failed"));
 
         // Should not throw
@@ -495,7 +495,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -511,7 +511,7 @@ public class RetrospectiveServiceTests : IDisposable
         await _service.RunRetrospectiveAsync("some-task", "   ");
         await _executor.DidNotReceive().RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -521,7 +521,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: lesson
@@ -552,7 +552,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: lesson
@@ -572,7 +572,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: lesson
@@ -608,7 +608,7 @@ public class RetrospectiveServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Retrospective summary here.");
 
         await _service.RunRetrospectiveAsync(taskId, "engineer-1");
@@ -616,7 +616,7 @@ public class RetrospectiveServiceTests : IDisposable
         // Should have called executor (Finding comment doesn't block retrospective)
         await _executor.Received(1).RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
 
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();

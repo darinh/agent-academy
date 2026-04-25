@@ -11,13 +11,18 @@ public interface ICopilotSdkSender
     /// <summary>
     /// Sends a prompt and returns the complete response, retrying on
     /// transient and quota errors. Auth errors are never retried.
+    /// When <paramref name="turnId"/> is provided, the session is linked to
+    /// the watchdog liveness tracker for the duration of the call so SDK
+    /// callbacks (permission requests, streaming events) can be attributed
+    /// to the correct in-flight turn.
     /// </summary>
     Task<string> SendWithRetryAsync(
         CopilotSession session,
         AgentDefinition agent,
         string prompt,
         string? roomId,
-        CancellationToken ct);
+        CancellationToken ct,
+        string? turnId = null);
 
     /// <summary>
     /// Sends a prompt and collects the complete streamed response.
@@ -28,5 +33,6 @@ public interface ICopilotSdkSender
         string prompt,
         string agentId,
         string? roomId,
-        CancellationToken ct);
+        CancellationToken ct,
+        string? turnId = null);
 }

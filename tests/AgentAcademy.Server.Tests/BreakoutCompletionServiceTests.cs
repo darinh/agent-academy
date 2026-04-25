@@ -55,7 +55,7 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_Success_ReturnsResponse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, "do stuff", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "do stuff", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("all done");
 
         var result = await _service.RunAgentAsync(agent, "do stuff", "room-1");
@@ -67,20 +67,20 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_WithWorkspacePath_PassesThroughToExecutor()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, "build", "room-1", "/ws/tree", Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "build", "room-1", "/ws/tree", Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("built");
 
         var result = await _service.RunAgentAsync(agent, "build", "room-1", "/ws/tree");
 
         Assert.Equal("built", result);
-        await _executor.Received(1).RunAsync(agent, "build", "room-1", "/ws/tree", Arg.Any<CancellationToken>());
+        await _executor.Received(1).RunAsync(agent, "build", "room-1", "/ws/tree", Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     [Fact]
     public async Task RunAgentAsync_EmptyResponse_ReturnedAsIs()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, "ping", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "ping", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var result = await _service.RunAgentAsync(agent, "ping", "room-1");
@@ -92,7 +92,7 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_QuotaExceeded_ReturnsWarningMessage()
     {
         var agent = TestAgent(name: "Apollo");
-        _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AgentQuotaExceededException(
                 agent.Id, "requests_per_hour", "Rate limit exceeded", 60));
 
@@ -106,7 +106,7 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_QuotaExceeded_WarningContainsAgentName()
     {
         var agent = TestAgent(name: "Apollo");
-        _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AgentQuotaExceededException(
                 agent.Id, "tokens_per_hour", "Token limit hit", 120));
 
@@ -120,7 +120,7 @@ public class BreakoutCompletionServiceTests
     {
         var agent = TestAgent(name: "Apollo");
         var errorMessage = "Token limit hit — back off for a bit";
-        _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AgentQuotaExceededException(
                 agent.Id, "tokens_per_hour", errorMessage, 120));
 
@@ -133,7 +133,7 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_Cancelled_ReturnsEmptyString()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, "long task", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "long task", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new OperationCanceledException());
 
         var result = await _service.RunAgentAsync(agent, "long task", "room-1");
@@ -145,7 +145,7 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_TaskCancelled_ReturnsEmptyString()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, "long task", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "long task", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new TaskCanceledException());
 
         var result = await _service.RunAgentAsync(agent, "long task", "room-1");
@@ -157,7 +157,7 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_OtherException_Propagates()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, "bad call", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "bad call", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new InvalidOperationException("something broke"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -168,7 +168,7 @@ public class BreakoutCompletionServiceTests
     public async Task RunAgentAsync_TimeoutException_Propagates()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, "slow", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, "slow", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new TimeoutException("timed out"));
 
         await Assert.ThrowsAsync<TimeoutException>(
@@ -250,9 +250,9 @@ public class BreakoutCompletionServiceTests
         var engineer = TestAgent("eng-1", "Hephaestus");
         var reviewer = ReviewerAgent("rev-1", "Athena");
 
-        _executor.RunAsync(engineer, "build", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(engineer, "build", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("code written");
-        _executor.RunAsync(reviewer, "review", "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(reviewer, "review", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("looks good");
 
         var r1 = await _service.RunAgentAsync(engineer, "build", "room-1");
@@ -270,7 +270,7 @@ public class BreakoutCompletionServiceTests
 
         foreach (var quotaType in quotaTypes)
         {
-            _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>())
+            _executor.RunAsync(agent, "work", "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
                 .ThrowsAsync(new AgentQuotaExceededException(
                     agent.Id, quotaType, $"Exceeded {quotaType}", 60));
 

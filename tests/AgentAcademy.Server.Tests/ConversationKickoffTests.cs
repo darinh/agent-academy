@@ -43,7 +43,7 @@ public sealed class ConversationKickoffTests : IDisposable
         executor.CircuitBreakerState.Returns(CircuitState.Closed);
         executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("PASS");
 
         var services = new ServiceCollection();
@@ -87,7 +87,7 @@ public sealed class ConversationKickoffTests : IDisposable
         var pipeline = new CommandPipeline([], NullLogger<CommandPipeline>.Instance);
         var turnRunner = new AgentTurnRunner(
             executor, pipeline, null!, memoryLoader, scopeFactory,
-            NullLogger<AgentTurnRunner>.Instance);
+            NullLogger<AgentTurnRunner>.Instance, new TestDoubles.NoOpAgentLivenessTracker());
         var breakoutCompletion = new BreakoutCompletionService(
             scopeFactory, Catalog, executor, specManager,
             pipeline, memoryLoader,

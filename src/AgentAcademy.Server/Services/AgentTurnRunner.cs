@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,7 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
     private readonly ITaskAssignmentHandler _taskAssignmentHandler;
     private readonly IAgentMemoryLoader _memoryLoader;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IAgentLivenessTracker _livenessTracker;
     private readonly ILogger<AgentTurnRunner> _logger;
 
     public AgentTurnRunner(
@@ -28,13 +30,15 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
         ITaskAssignmentHandler taskAssignmentHandler,
         IAgentMemoryLoader memoryLoader,
         IServiceScopeFactory scopeFactory,
-        ILogger<AgentTurnRunner> logger)
+        ILogger<AgentTurnRunner> logger,
+        IAgentLivenessTracker livenessTracker)
     {
         _executor = executor;
         _commandPipeline = commandPipeline;
         _taskAssignmentHandler = taskAssignmentHandler;
         _memoryLoader = memoryLoader;
         _scopeFactory = scopeFactory;
+        _livenessTracker = livenessTracker;
         _logger = logger;
     }
 
@@ -57,11 +61,23 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
         string? sessionSummary = null,
         string? sprintPreamble = null,
         string? promptSuffix = null,
-        string? specVersion = null)
+        string? specVersion = null,
+        string? sprintId = null,
+        CancellationToken cancellationToken = default)
     {
         var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
         await activity.PublishThinkingAsync(agent, roomId);
+
+        // Per-turn cancellation: linked to the round-level token AND cancellable
+        // by the watchdog through the IAgentLivenessTracker registration. The
+        // turnId is a local correlation key — opaque to callers; only the
+        // watchdog reads it via Snapshot().
+        var turnId = Guid.NewGuid().ToString("N");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var registration = _livenessTracker.RegisterTurn(
+            turnId, agent.Id, agent.Name, roomId, sprintId, cts);
+
         string response;
         try
         {
@@ -74,7 +90,15 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
                 agent, room, specContext, taskItems, memories, dms, sessionSummary, sprintPreamble, specVersion);
             if (promptSuffix is not null) prompt += promptSuffix;
 
-            response = await RunAgentAsync(agent, prompt, roomId);
+            response = await RunAgentAsync(agent, prompt, roomId, cts.Token, turnId);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            // Watchdog-induced cancellation: log info and return empty so the
+            // round loop continues on to the next agent. The watchdog has
+            // already posted a STALL REPORT and a room notice.
+            _logger.LogInformation("Agent {AgentName} turn {TurnId} cancelled by watchdog", agent.Name, turnId);
+            response = "";
         }
         catch (Exception ex)
         {
@@ -103,11 +127,16 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
     // ── AGENT EXECUTION ─────────────────────────────────────────
 
     private async Task<string> RunAgentAsync(
-        AgentDefinition agent, string prompt, string roomId, string? workspacePath = null)
+        AgentDefinition agent,
+        string prompt,
+        string roomId,
+        CancellationToken ct,
+        string turnId,
+        string? workspacePath = null)
     {
         try
         {
-            return await _executor.RunAsync(agent, prompt, roomId, workspacePath);
+            return await _executor.RunAsync(agent, prompt, roomId, workspacePath, ct, turnId);
         }
         catch (AgentQuotaExceededException ex)
         {
@@ -116,11 +145,9 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
                 agent.Name, ex.QuotaType, ex.Message);
             return $"⚠️ **{agent.Name} is temporarily paused** — {ex.Message}";
         }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("Agent {AgentName} was cancelled", agent.Name);
-            return "";
-        }
+        // OperationCanceledException is rethrown so the caller can distinguish
+        // watchdog-induced cancellation (which becomes empty response) from
+        // round-level cancellation (which propagates).
     }
 
     // ── RESPONSE PROCESSING ─────────────────────────────────────

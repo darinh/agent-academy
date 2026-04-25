@@ -67,6 +67,7 @@ public sealed class CopilotExecutorRunAsyncTests : IAsyncDisposable
             _errorTracker,
             _quotaService,
             _catalog,
+            new TestDoubles.NoOpAgentLivenessTracker(),
             _circuitBreaker,
             _fallback);
     }

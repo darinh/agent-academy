@@ -44,13 +44,18 @@ public interface IAgentExecutor
     /// complete response. When <paramref name="workspacePath"/> is provided,
     /// the agent's CLI process operates in that directory (used for git
     /// worktree isolation so agents don't stomp on each other's files).
+    /// <paramref name="turnId"/>, when supplied, is the watchdog correlation
+    /// id; the executor links the underlying SDK session to this turn so
+    /// permission denials and streaming events can be attributed to the
+    /// correct in-flight turn.
     /// </summary>
     Task<string> RunAsync(
         AgentDefinition agent,
         string prompt,
         string? roomId,
         string? workspacePath = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? turnId = null);
 
     /// <summary>
     /// Invalidates (disposes) the cached session for a specific agent

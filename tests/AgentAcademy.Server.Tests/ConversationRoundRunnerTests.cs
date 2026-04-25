@@ -80,7 +80,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
             Arg.Any<IActivityPublisher>(), Arg.Any<RoomSnapshot>(),
             Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<List<TaskItem>?>(),
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(),
-            Arg.Any<string?>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var agent = callInfo.Arg<AgentDefinition>();
@@ -215,7 +215,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
             Arg.Any<IActivityPublisher>(), Arg.Any<RoomSnapshot>(),
             Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<List<TaskItem>?>(),
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(),
-            Arg.Any<string?>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var agent = callInfo.Arg<AgentDefinition>();

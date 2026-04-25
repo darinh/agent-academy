@@ -37,7 +37,8 @@ public sealed class StubExecutor : IAgentExecutor
         string prompt,
         string? roomId,
         string? workspacePath = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? turnId = null)
     {
         ct.ThrowIfCancellationRequested();
 

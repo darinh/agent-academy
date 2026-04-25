@@ -164,7 +164,8 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
 
                 var plannerResult = await _turnRunner.RunAgentTurnAsync(
                     planner, scope, messageService, configService, activity,
-                    freshRoom, roomId, ctx.SpecContext, taskItems, ctx.SessionSummary, ctx.SprintPreamble, plannerSuffix, ctx.SpecVersion);
+                    freshRoom, roomId, ctx.SpecContext, taskItems, ctx.SessionSummary, ctx.SprintPreamble, plannerSuffix, ctx.SpecVersion,
+                    sprintIdAtRunStart, cancellationToken);
 
                 if (plannerResult.IsNonPass)
                 {
@@ -202,7 +203,8 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                 var result = await _turnRunner.RunAgentTurnAsync(
                     catalogAgent, scope, messageService, configService, activity,
                     currentRoom, roomId, ctx.SpecContext,
-                    sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
+                    sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion,
+                    sprintId: sprintIdAtRunStart, cancellationToken: cancellationToken);
 
                 if (result.IsNonPass) hadNonPassResponse = true;
             }

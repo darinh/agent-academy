@@ -108,7 +108,7 @@ public class ServerInstanceTests : IDisposable
             breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance);
         var turnRunner = new AgentTurnRunner(
             executor, pipeline, taskAssignment, memoryLoader,
-            scopeFactory, NullLogger<AgentTurnRunner>.Instance);
+            scopeFactory, NullLogger<AgentTurnRunner>.Instance, new TestDoubles.NoOpAgentLivenessTracker());
         var roundRunner = new ConversationRoundRunner(
             scopeFactory, _catalog, turnRunner,
             NullLogger<ConversationRoundRunner>.Instance);

@@ -214,7 +214,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
         var tcs = new TaskCompletionSource<string>();
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 runAsyncReached.TrySetResult();
@@ -245,7 +245,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
         var tcs = new TaskCompletionSource<string>();
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 runAsyncReached.TrySetResult();
@@ -275,7 +275,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("   \n\t  \n  ");
 
         var digestId = await _service.TryGenerateDigestAsync(force: true);
@@ -300,7 +300,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: shared
@@ -342,7 +342,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: lesson
@@ -381,7 +381,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: shared
@@ -410,7 +410,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         _executor.InvalidateSessionAsync(Arg.Any<string>(), Arg.Any<string>())
@@ -433,7 +433,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Throws(new TimeoutException("LLM timed out"));
 
         var result = await _service.TryGenerateDigestAsync(force: true);
@@ -580,7 +580,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("First digest summary.");
 
         var firstDigestId = await _service.TryGenerateDigestAsync(force: true);
@@ -594,7 +594,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Second digest summary.");
 
         var secondDigestId = await _service.TryGenerateDigestAsync(force: true);
@@ -627,7 +627,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("At threshold.");
 
         var result = await _service.TryGenerateDigestAsync();
@@ -654,7 +654,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Default threshold met.");
 
         var result = await _service.TryGenerateDigestAsync();
@@ -685,7 +685,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.TryGenerateDigestAsync(force: true);
@@ -705,7 +705,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.TryGenerateDigestAsync(force: true);
@@ -725,7 +725,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(),
             Arg.Do<string?>(r => capturedRoomId = r),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         var digestId = await _service.TryGenerateDigestAsync(force: true);

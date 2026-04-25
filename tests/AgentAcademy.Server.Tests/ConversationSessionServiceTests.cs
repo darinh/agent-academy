@@ -208,7 +208,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary of 5 messages.");
 
         var rotated = await _service.CheckAndRotateAsync("room-1");
@@ -264,7 +264,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Breakout summary.");
 
         var rotated = await _service.CheckAndRotateAsync("br-1", "Breakout");
@@ -450,7 +450,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("LLM summary of workspace.");
 
         var count = await _service.ArchiveAllActiveSessionsAsync();
@@ -517,7 +517,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Resume context: important decisions were made.");
 
         await _service.ArchiveAllActiveSessionsAsync();
@@ -1316,7 +1316,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string?>(),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.CheckAndRotateAsync("room-1");
@@ -1362,7 +1362,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string?>(),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.CheckAndRotateAsync("room-1");
@@ -1412,7 +1412,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string?>(),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.CheckAndRotateAsync("room-1");
@@ -1455,7 +1455,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string?>(),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.CheckAndRotateAsync("room-1");
@@ -1497,7 +1497,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string?>(),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.CheckAndRotateAsync("room-1");
@@ -1590,7 +1590,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string?>(),
             Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.CheckAndRotateAsync("br-1", "Breakout");

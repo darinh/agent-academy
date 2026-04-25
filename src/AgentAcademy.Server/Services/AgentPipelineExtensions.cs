@@ -1,8 +1,10 @@
 using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AgentAcademy.Server.Services;
 
@@ -72,6 +74,23 @@ public static class AgentPipelineExtensions
 
     private static IServiceCollection AddAgentExecution(this IServiceCollection services)
     {
+        // Watchdog liveness tracker — singleton, used by sender + permission
+        // handler to record per-turn progress, by AgentTurnRunner to register
+        // turns, and by AgentWatchdogService to detect stalls.
+        services.TryAddSingleton<TimeProvider>(_ => TimeProvider.System);
+        services.AddOptions<AgentWatchdogOptions>()
+            .Configure<IConfiguration>((o, c) => c.GetSection("Orchestrator:AgentWatchdog").Bind(o))
+            .Validate(
+                o => o.StallThresholdSeconds > 0
+                     && o.ScanIntervalSeconds > 0
+                     && o.ScanIntervalSeconds <= o.StallThresholdSeconds
+                     && o.MaxDenialsPerTurn > 0,
+                "invalid Orchestrator:AgentWatchdog thresholds (stall>0, scan>0, scan<=stall, maxDenials>0)")
+            .ValidateOnStart();
+        services.AddSingleton<AgentLivenessTracker>();
+        services.AddSingleton<IAgentLivenessTracker>(sp => sp.GetRequiredService<AgentLivenessTracker>());
+        services.AddHostedService<AgentWatchdogService>();
+
         services.AddSingleton<CopilotClientFactory>();
         services.AddSingleton<ICopilotClientFactory>(sp => sp.GetRequiredService<CopilotClientFactory>());
         services.AddSingleton<CopilotSessionPool>();
@@ -92,6 +111,7 @@ public static class AgentPipelineExtensions
             sp.GetRequiredService<IAgentErrorTracker>(),
             sp.GetRequiredService<IAgentQuotaService>(),
             sp.GetRequiredService<IAgentCatalog>(),
+            sp.GetRequiredService<IAgentLivenessTracker>(),
             sp.GetRequiredService<CopilotCircuitBreaker>(),
             sp.GetRequiredService<StubExecutor>()));
         services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());

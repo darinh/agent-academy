@@ -90,7 +90,7 @@ public class AgentTurnRunnerTests : IDisposable
             null!, // TaskAssignmentHandler — tested paths with task assignments will NRE but are caught
             _memoryLoader,
             _scopeFactory,
-            NullLogger<AgentTurnRunner>.Instance);
+            NullLogger<AgentTurnRunner>.Instance, new TestDoubles.NoOpAgentLivenessTracker());
 
         // Seed default room so FK constraints pass for ActivityPublisher
         _db.Rooms.Add(new RoomEntity
@@ -141,7 +141,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_ReturnsCorrectAgent()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Hello world");
 
         var scope = CreateMockScope();
@@ -157,7 +157,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_SubstantiveResponse_IsNonPassTrue()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("I have completed the implementation of the feature.");
 
         var scope = CreateMockScope();
@@ -173,7 +173,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_EmptyResponse_IsNonPassFalse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -189,7 +189,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_PassResponse_IsNonPassFalse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("PASS");
 
         var scope = CreateMockScope();
@@ -204,7 +204,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_BracketPassResponse_IsNonPassFalse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("[PASS]");
 
         var scope = CreateMockScope();
@@ -219,7 +219,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_WhitespaceOnlyResponse_IsNonPassFalse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("   ");
 
         var scope = CreateMockScope();
@@ -235,7 +235,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         var offlineResponse = "TestAgent is offline — the Copilot SDK is not connected";
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(offlineResponse);
 
         var scope = CreateMockScope();
@@ -251,7 +251,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_NothingToAddResponse_IsNonPassFalse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Nothing to add.");
 
         var scope = CreateMockScope();
@@ -268,7 +268,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_ExecutorThrowsGenericException_ReturnsEmptyResponse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new InvalidOperationException("something broke"));
 
         var scope = CreateMockScope();
@@ -284,7 +284,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_ExecutorThrowsQuotaException_ReturnsWarningMessage()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AgentQuotaExceededException("agent-1", "requests", "Rate limit hit", 60));
 
         var scope = CreateMockScope();
@@ -301,7 +301,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_ExecutorThrowsOperationCanceled_ReturnsEmptyResponse()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new OperationCanceledException());
 
         var scope = CreateMockScope();
@@ -329,7 +329,7 @@ public class AgentTurnRunnerTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -345,7 +345,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_NoConfigOverride_ReturnsCatalogAgent()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -363,7 +363,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_PublishesThinkingAndFinishedActivities()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("response");
 
         var scope = CreateMockScope();
@@ -385,7 +385,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_PublishesFinishedEvenOnException()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new InvalidOperationException("boom"));
 
         var scope = CreateMockScope();
@@ -408,7 +408,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -429,7 +429,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -450,7 +450,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -471,7 +471,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -491,7 +491,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_PassesRoomIdToExecutor()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), "my-room-42", Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), "my-room-42", Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("ok");
 
         await SeedRoomAsync("my-room-42");
@@ -501,7 +501,7 @@ public class AgentTurnRunnerTests : IDisposable
             TestRoom("my-room-42"), "my-room-42", null);
 
         await _executor.Received(1)
-            .RunAsync(agent, Arg.Any<string>(), "my-room-42", Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            .RunAsync(agent, Arg.Any<string>(), "my-room-42", Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     // ── MEMORY LOADING ──────────────────────────────────────────
@@ -524,7 +524,7 @@ public class AgentTurnRunnerTests : IDisposable
         await _db.SaveChangesAsync();
 
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -564,7 +564,7 @@ public class AgentTurnRunnerTests : IDisposable
         await _db.SaveChangesAsync();
 
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -599,7 +599,7 @@ public class AgentTurnRunnerTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -617,7 +617,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_NoDMs_DoesNotThrow()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -634,7 +634,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_NonPassResponse_PostsAgentMessage()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Here is my detailed analysis of the codebase.");
 
         var scope = CreateMockScope();
@@ -655,7 +655,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_PassResponse_DoesNotPostMessage()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("PASS");
 
         var scope = CreateMockScope();
@@ -675,7 +675,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_EmptyResponse_DoesNotPostMessage()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -698,7 +698,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         var response = "This is a plain response with no commands.";
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(response);
 
         var scope = CreateMockScope();
@@ -721,7 +721,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_ReturnsAgentTurnResult()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("result text");
 
         var scope = CreateMockScope();
@@ -737,7 +737,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_AgentTurnResult_HasAllProperties()
     {
         var agent = TestAgent("my-agent", "MyAgent");
-        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("done");
 
         var scope = CreateMockScope();
@@ -756,7 +756,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_QuotaException_ResponseContainsWarningEmoji()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AgentQuotaExceededException("agent-1", "tokens", "Token budget exhausted", 120));
 
         var scope = CreateMockScope();
@@ -771,7 +771,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_QuotaException_ResponseContainsAgentName()
     {
         var agent = TestAgent("agent-1", "Hephaestus");
-        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AgentQuotaExceededException("agent-1", "requests", "Too many requests", 60));
 
         var scope = CreateMockScope();
@@ -786,7 +786,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_QuotaException_ResponseContainsExceptionMessage()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AgentQuotaExceededException("agent-1", "cost", "Cost limit exceeded for this hour", 300));
 
         var scope = CreateMockScope();
@@ -803,7 +803,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_CallsExecutorExactlyOnce()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -812,14 +812,14 @@ public class AgentTurnRunnerTests : IDisposable
             TestRoom(), "room-1", null);
 
         await _executor.Received(1)
-            .RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            .RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     [Fact]
     public async Task RunAgentTurnAsync_DoesNotCallExecutorAfterException()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new Exception("fail"));
 
         var scope = CreateMockScope();
@@ -829,7 +829,7 @@ public class AgentTurnRunnerTests : IDisposable
 
         // Verify it was called exactly once (no retry)
         await _executor.Received(1)
-            .RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            .RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     // ── EDGE CASES ──────────────────────────────────────────────
@@ -838,7 +838,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_NullSpecContext_DoesNotThrow()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -853,7 +853,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_AllOptionalParamsNull_DoesNotThrow()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -871,7 +871,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -899,7 +899,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -922,7 +922,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent("eng-42", "Hephaestus");
         _catalog.Agents.Add(agent);
-        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Here is my detailed analysis of the situation.");
 
         var scope = CreateMockScope();
@@ -943,7 +943,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_NonPass_PostsWithCorrectRoomId()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Detailed response about the feature implementation plan.");
 
         var scope = CreateMockScope();
@@ -970,7 +970,7 @@ public class AgentTurnRunnerTests : IDisposable
             CapabilityTags: [], EnabledTools: [], AutoJoinDefaultRoom: true);
         _catalog.Agents.Add(plannerAgent);
 
-        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Here is the detailed plan for our implementation sprint.");
 
         var scope = CreateMockScope();
@@ -994,7 +994,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         var callCount = 0;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 callCount++;
@@ -1026,7 +1026,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_PassVariants_AllReturnNonPassFalse(string response)
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(response);
 
         var scope = CreateMockScope();
@@ -1047,7 +1047,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_PassVariants_DoNotPostMessages(string response)
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(response);
 
         var scope = CreateMockScope();
@@ -1066,7 +1066,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_OfflineResponse_DoesNotPostMessage()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("TestAgent is offline — the Copilot SDK is not connected. Please try again later.");
 
         var scope = CreateMockScope();
@@ -1085,7 +1085,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_TaskCanceledException_TreatedAsCancellation()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new TaskCanceledException("Request timed out"));
 
         var scope = CreateMockScope();
@@ -1113,7 +1113,7 @@ public class AgentTurnRunnerTests : IDisposable
         await _db.SaveChangesAsync();
 
         AgentDefinition? capturedAgent = null;
-        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedAgent = call.ArgAt<AgentDefinition>(0);
@@ -1136,7 +1136,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         string? capturedPrompt = null;
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(call =>
             {
                 capturedPrompt = call.ArgAt<string>(1);
@@ -1159,7 +1159,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_ThinkingPublishedBeforeFinished()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("ok");
 
         var scope = CreateMockScope();
@@ -1188,7 +1188,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         var largeResponse = new string('x', 10_000);
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(largeResponse);
 
         var scope = CreateMockScope();
@@ -1205,7 +1205,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_ExecutorReceivesNullWorkspacePath()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), "room-1", null, Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var scope = CreateMockScope();
@@ -1214,7 +1214,7 @@ public class AgentTurnRunnerTests : IDisposable
             TestRoom(), "room-1", null);
 
         await _executor.Received(1).RunAsync(
-            agent, Arg.Any<string>(), "room-1", null, Arg.Any<CancellationToken>());
+            agent, Arg.Any<string>(), "room-1", null, Arg.Any<CancellationToken>(), Arg.Any<string?>());
     }
 
     // ── EXCEPTION IN OUTER CATCH ────────────────────────────────
@@ -1223,7 +1223,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_GenericExceptionInTryCatch_ReturnsGracefully()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new OutOfMemoryException("OOM"));
 
         var scope = CreateMockScope();
@@ -1239,7 +1239,7 @@ public class AgentTurnRunnerTests : IDisposable
     public async Task RunAgentTurnAsync_AggregateException_CaughtGracefully()
     {
         var agent = TestAgent();
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .ThrowsAsync(new AggregateException("Multiple failures",
                 new InvalidOperationException("inner1"),
                 new TimeoutException("inner2")));
@@ -1260,7 +1260,7 @@ public class AgentTurnRunnerTests : IDisposable
     {
         var agent = TestAgent();
         var response = "  Hello with leading spaces and\nnewlines\t\tand tabs  ";
-        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(response);
 
         var scope = CreateMockScope();

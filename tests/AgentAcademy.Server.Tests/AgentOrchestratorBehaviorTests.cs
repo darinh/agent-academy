@@ -69,7 +69,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         // Default: all agents return PASS
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 var agent = callInfo.Arg<AgentDefinition>();
@@ -130,7 +130,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
             _executor, pipeline,
             null!, // TaskAssignmentHandler — not exercised in these tests
             memoryLoader, scopeFactory,
-            NullLogger<AgentTurnRunner>.Instance);
+            NullLogger<AgentTurnRunner>.Instance, new TestDoubles.NoOpAgentLivenessTracker());
 
         // BreakoutLifecycleService — orchestrator only calls .Stop()
         var breakoutCompletion = new BreakoutCompletionService(
@@ -392,7 +392,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(async callInfo =>
             {
                 var agent = callInfo.Arg<AgentDefinition>();
@@ -452,7 +452,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         var callCount = 0;
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 var agent = callInfo.Arg<AgentDefinition>();
@@ -486,7 +486,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         // Planner tags the engineer
         _executor.RunAsync(
             Arg.Is<AgentDefinition>(a => a.Id == "planner-1"),
-            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 lock (_executorCalls) { _executorCalls.Add(("planner-1", callInfo.ArgAt<string>(1))); }
@@ -516,7 +516,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         // Planner responds but doesn't tag anyone
         _executor.RunAsync(
             Arg.Is<AgentDefinition>(a => a.Id == "planner-1"),
-            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 lock (_executorCalls) { _executorCalls.Add(("planner-1", callInfo.ArgAt<string>(1))); }
@@ -575,7 +575,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         // Planner always returns a non-pass response (triggers continuation)
         _executor.RunAsync(
             Arg.Is<AgentDefinition>(a => a.Id == "planner-1"),
-            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 lock (_executorCalls) { _executorCalls.Add(("planner-1", callInfo.ArgAt<string>(1))); }
@@ -608,7 +608,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         // Planner tags both engineer and reviewer
         _executor.RunAsync(
             Arg.Is<AgentDefinition>(a => a.Id == "planner-1"),
-            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(callInfo =>
             {
                 lock (_executorCalls) { _executorCalls.Add(("planner-1", callInfo.ArgAt<string>(1))); }
