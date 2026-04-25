@@ -288,7 +288,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         var v1 = TestArtifactContent.RequirementsDocument;
-        var v2 = """{"Title":"Updated","Description":"Revised","InScope":["a"],"OutOfScope":["b"],"AcceptanceCriteria":["c"]}""";
+        var v2 = """{"Title":"Updated","Description":"Revised","InScope":["a"],"OutOfScope":["b"]}""";
 
         var first = await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", v1, "aristotle");
@@ -469,7 +469,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // Extra field "Priority" not in the schema — should be ignored, not rejected
-        var content = """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[],"Priority":"High"}""";
+        var content = """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"Priority":"High"}""";
         var artifact = await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", content);
 

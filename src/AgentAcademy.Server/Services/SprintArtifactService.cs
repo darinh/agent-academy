@@ -174,7 +174,6 @@ public sealed class SprintArtifactService : ISprintArtifactService
                     RequireString(req.Description, "Description");
                     RequireList(req.InScope, "InScope");
                     RequireList(req.OutOfScope, "OutOfScope");
-                    RequireList(req.AcceptanceCriteria, "AcceptanceCriteria");
                     break;
 
                 case ArtifactType.SprintPlan:

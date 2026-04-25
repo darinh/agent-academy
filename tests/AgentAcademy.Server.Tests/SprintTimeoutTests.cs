@@ -54,7 +54,7 @@ public class SprintTimeoutTests : IDisposable
     {
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
-            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
+            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[]}""");
         await _sprintStageService.AdvanceStageAsync(sprint.Id);
         // Sprint is now AwaitingSignOff with PendingStage = Planning
         return sprint;

@@ -7,7 +7,7 @@ namespace AgentAcademy.Server.Tests;
 internal static class TestArtifactContent
 {
     public const string RequirementsDocument = """
-        {"Title":"Test Requirements","Description":"Build a widget","InScope":["core"],"OutOfScope":["edge cases"],"AcceptanceCriteria":["it works"]}
+        {"Title":"Test Requirements","Description":"Build a widget","InScope":["core"],"OutOfScope":["edge cases"]}
         """;
 
     public const string SprintPlan = """

@@ -101,7 +101,7 @@ public class SprintTimeoutServiceTests : IDisposable
     {
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
-            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
+            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[]}""");
         await _sprintStageService.AdvanceStageAsync(sprint.Id);
         return sprint;
     }
@@ -477,7 +477,7 @@ public class SprintTimeoutServiceTests : IDisposable
         var s2Workspace = "/workspace/other";
         var s2 = await _sprintService.CreateSprintAsync(s2Workspace);
         await _artifactService.StoreArtifactAsync(s2.Id, "Intake", "RequirementsDocument",
-            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
+            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[]}""");
         await _sprintStageService.AdvanceStageAsync(s2.Id);
         s2.SignOffRequestedAt = DateTime.UtcNow.AddHours(-5);
         await _db.SaveChangesAsync();

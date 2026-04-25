@@ -252,7 +252,7 @@ Artifact content is JSON. The following record types describe the expected shape
 
 ```csharp
 public record RequirementsDocument(string Title, string Description,
-    List<string> InScope, List<string> OutOfScope, List<string> AcceptanceCriteria);
+    List<string> InScope, List<string> OutOfScope);
 
 public record SprintPlanDocument(string Summary, List<SprintPlanPhase> Phases,
     List<string>? OverflowRequirements);

@@ -103,7 +103,7 @@ public class SprintMetricsTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
-            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
+            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[]}""");
         await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan",
             """{"Summary":"S","Phases":[]}""");
 
@@ -150,7 +150,7 @@ public class SprintMetricsTests : IDisposable
 
         // Store required artifact then advance
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
-            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
+            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[]}""");
         // Intake requires sign-off, so approve it
         await _stageService.AdvanceStageAsync(sprint.Id);
         await _stageService.ApproveAdvanceAsync(sprint.Id);
@@ -176,7 +176,7 @@ public class SprintMetricsTests : IDisposable
 
         // Store artifact and advance from Intake through sign-off
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
-            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
+            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[]}""");
         await _stageService.AdvanceStageAsync(sprint.Id);
         await _stageService.ApproveAdvanceAsync(sprint.Id);
 
@@ -261,7 +261,7 @@ public class SprintMetricsTests : IDisposable
     {
         var s1 = await _service.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(s1.Id, "Intake", "RequirementsDocument",
-            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
+            """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[]}""");
 
         _db.Tasks.Add(new TaskEntity
         {
