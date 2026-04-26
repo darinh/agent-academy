@@ -38,6 +38,40 @@ public sealed class RoomLifecycleService : IRoomLifecycleService
     }
 
     /// <summary>
+    /// Pure name-based heuristic for "looks like a main collaboration room".
+    /// Used as the *first* filter when scanning workspace rooms; callers must
+    /// additionally confirm by ID equality against the workspace's resolved
+    /// main room (or the catalog default) before treating a row as the
+    /// persistent main — otherwise a user-created room named e.g. "Security
+    /// Collaboration Room" would be wrongly exempted from terminal-status
+    /// flips. Workspace-agnostic.
+    /// </summary>
+    public static bool IsMainCollaborationRoomName(string roomName)
+    {
+        if (string.IsNullOrEmpty(roomName)) return false;
+        return roomName.EndsWith("Main Room", StringComparison.Ordinal)
+            || roomName.EndsWith("Collaboration Room", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Returns the set of room IDs that represent the persistent main collaboration
+    /// room for <paramref name="workspacePath"/>: at most one workspace-resolved
+    /// main room ID plus the legacy catalog default room ID. Rooms in this set
+    /// are exempt from sprint-completion terminal-status flips so they remain
+    /// writable across sprint boundaries (B1).
+    /// </summary>
+    public async Task<HashSet<string>> GetExemptMainRoomIdsAsync(string workspacePath)
+    {
+        var exempt = new HashSet<string>(StringComparer.Ordinal) { _catalog.DefaultRoomId };
+        if (!string.IsNullOrEmpty(workspacePath))
+        {
+            var resolved = await GetDefaultRoomForWorkspaceAsync(workspacePath);
+            if (!string.IsNullOrEmpty(resolved)) exempt.Add(resolved);
+        }
+        return exempt;
+    }
+
+    /// <summary>
     /// Returns true when the given room is the active workspace's main collaboration room
     /// or the legacy catalog default room.
     /// </summary>
@@ -227,12 +261,22 @@ public sealed class RoomLifecycleService : IRoomLifecycleService
 
         var workspaceRoomIdSet = workspaceRoomIds.ToHashSet(StringComparer.Ordinal);
 
-        // Subset that still needs status transition.
-        var roomsToTransition = await _db.Rooms
+        // Subset that still needs status transition. Exempt the persistent main
+        // collaboration room (B1): freezing it on sprint complete makes the
+        // next sprint's kickoff filter (Status != Completed) skip it and
+        // breaks the autonomy loop. Strict ID-based exemption (workspace's
+        // resolved main + catalog DefaultRoomId) — does NOT exempt arbitrary
+        // user-named rooms like "Security Collaboration Room". Breakouts and
+        // other workspace rooms still freeze; agents still evacuate to the
+        // main room below.
+        var exemptIds = await GetExemptMainRoomIdsAsync(workspacePath);
+        var roomsToTransition = (await _db.Rooms
             .Where(r => r.WorkspacePath == workspacePath
                 && r.Status != archivedStatus
                 && r.Status != completedStatus)
-            .ToListAsync();
+            .ToListAsync())
+            .Where(r => !exemptIds.Contains(r.Id))
+            .ToList();
 
         // Every active descendant breakout — regardless of whether its parent
         // room is still Active or already Completed.
@@ -377,11 +421,20 @@ public sealed class RoomLifecycleService : IRoomLifecycleService
         // so we use the parameterless EndsWith (translated to LIKE 'pattern'). Room names
         // like "Main Room" and "Collaboration Room" don't have case-ambiguous variants in
         // practice, so the loss of Ordinal semantics is immaterial here.
+        // Deterministic ordering: prefer the exact DefaultRoomName match (the
+        // canonical workspace main created by EnsureDefaultRoomForWorkspaceAsync),
+        // then the legacy catalog DefaultRoomId, then by Id alphabetically.
+        // Without this ordering, multiple suffix-matching rooms in the same
+        // workspace pick non-deterministically (test flakiness; B1 exemption
+        // could land on the wrong room).
         var workspaceDefaultRoom = await _db.Rooms
             .Where(r => r.WorkspacePath == workspacePath &&
                    (r.Name == _catalog.DefaultRoomName ||
                     r.Name.EndsWith("Main Room") ||
                     r.Name.EndsWith("Collaboration Room")))
+            .OrderBy(r => r.Name == _catalog.DefaultRoomName ? 0 : 1)
+            .ThenBy(r => r.Id == _catalog.DefaultRoomId ? 0 : 1)
+            .ThenBy(r => r.Id)
             .Select(r => r.Id)
             .FirstOrDefaultAsync();
 

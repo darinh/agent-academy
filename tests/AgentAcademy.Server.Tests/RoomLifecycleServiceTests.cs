@@ -955,8 +955,12 @@ public class RoomLifecycleServiceTests : IDisposable
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task MarkSprintRoomsCompleted_FlipsActiveAndIdleRooms_InWorkspace()
+    public async Task MarkSprintRoomsCompleted_FlipsActiveAndIdleRooms_InWorkspace_ButExemptsMain()
     {
+        // B1 regression guard: the seeded default ("Main Collaboration Room")
+        // must NOT flip to Completed even when the sprint completes — it's
+        // the persistent home and would otherwise become read-only between
+        // sprints. Breakouts / non-main workspace rooms still freeze.
         var (svc, db) = CreateScope();
         SeedDefaultRoom(db, WorkspacePath);
         db.Rooms.Add(MakeRoom("room-a", "Breakout A", nameof(RoomStatus.Active), WorkspacePath));
@@ -965,9 +969,94 @@ public class RoomLifecycleServiceTests : IDisposable
 
         var transitioned = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
 
-        Assert.Equal(3, transitioned);
-        var rooms = await db.Rooms.Where(r => r.WorkspacePath == WorkspacePath).ToListAsync();
-        Assert.All(rooms, r => Assert.Equal(nameof(RoomStatus.Completed), r.Status));
+        Assert.Equal(2, transitioned);
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync("room-a"))!.Status);
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync("room-b"))!.Status);
+        // Main collaboration room is exempt and stays writable.
+        Assert.NotEqual(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync(DefaultRoomId))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_ExemptsWorkspaceCanonicalMainRoom()
+    {
+        // The exemption is workspace-scoped: GetExemptMainRoomIds resolves the
+        // canonical main room (preferring exact DefaultRoomName match), exempts
+        // its ID, and freezes everything else — including other rooms that
+        // happen to have a "Collaboration Room" / "Main Room" suffix.
+        var (svc, db) = CreateScope();
+        db.Rooms.Add(MakeRoom("ws-main", DefaultRoomName,
+            nameof(RoomStatus.Active), WorkspacePath));
+        db.Rooms.Add(MakeRoom("ws-collab", "Team Collaboration Room",
+            nameof(RoomStatus.Active), WorkspacePath));
+        db.Rooms.Add(MakeRoom("ws-breakout", "Feature Work",
+            nameof(RoomStatus.Active), WorkspacePath));
+        db.SaveChanges();
+
+        var transitioned = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        // Only ws-main is exempt (exact DefaultRoomName match wins). The
+        // user-named "Team Collaboration Room" is NOT exempt — it freezes
+        // along with the breakout.
+        Assert.Equal(2, transitioned);
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync("ws-breakout"))!.Status);
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync("ws-collab"))!.Status);
+        Assert.Equal(nameof(RoomStatus.Active),
+            (await db.Rooms.FindAsync("ws-main"))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkSprintRoomsCompleted_StrictExemption_FreezesUserCreatedCollabRooms()
+    {
+        // Reviewer's edge case: a user-created room named "Security Collaboration
+        // Room" must NOT be exempted from sprint-completion freeze just because
+        // its name ends with "Collaboration Room". Only the workspace's
+        // resolved main room (and the catalog default) get the exemption.
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db, WorkspacePath); // catalog default — exempt
+        db.Rooms.Add(MakeRoom("user-room-1", "Security Collaboration Room",
+            nameof(RoomStatus.Active), WorkspacePath));
+        db.SaveChanges();
+
+        var transitioned = await svc.MarkSprintRoomsCompletedAsync(WorkspacePath, "sprint-1");
+
+        Assert.Equal(1, transitioned);
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync("user-room-1"))!.Status);
+        Assert.NotEqual(nameof(RoomStatus.Completed),
+            (await db.Rooms.FindAsync(DefaultRoomId))!.Status);
+    }
+
+    [Fact]
+    public async Task GetExemptMainRoomIds_ReturnsCatalogDefaultPlusWorkspaceMain()
+    {
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db, WorkspacePath);
+        db.Rooms.Add(MakeRoom("ws-main", "Project Alpha Main Room",
+            nameof(RoomStatus.Active), WorkspacePath));
+        db.SaveChanges();
+
+        var exempt = await svc.GetExemptMainRoomIdsAsync(WorkspacePath);
+
+        Assert.Contains(DefaultRoomId, exempt);
+        // The workspace has TWO main-named rooms. GetDefaultRoomForWorkspaceAsync
+        // returns the first match — exactly one workspace-resolved main is added.
+        Assert.True(exempt.Count >= 1 && exempt.Count <= 2);
+    }
+
+    [Fact]
+    public void IsMainCollaborationRoomName_MatchesSuffixesAndHandlesEmpty()
+    {
+        Assert.True(RoomLifecycleService.IsMainCollaborationRoomName("Main Collaboration Room"));
+        Assert.True(RoomLifecycleService.IsMainCollaborationRoomName("Project X Main Room"));
+        Assert.True(RoomLifecycleService.IsMainCollaborationRoomName("Team Collaboration Room"));
+        Assert.False(RoomLifecycleService.IsMainCollaborationRoomName("Breakout A"));
+        Assert.False(RoomLifecycleService.IsMainCollaborationRoomName(""));
+        Assert.False(RoomLifecycleService.IsMainCollaborationRoomName("main room")); // case-sensitive
     }
 
     [Fact]

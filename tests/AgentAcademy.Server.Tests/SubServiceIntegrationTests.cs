@@ -751,14 +751,17 @@ public class SubServiceIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task TransitionPhase_FinalSynthesisCompletesRoom()
+    public async Task TransitionPhase_FinalSynthesis_DoesNotFreezeMainRoom()
     {
+        // B1 regression guard: the persistent main collaboration room never
+        // becomes terminal even when explicitly advanced to FinalSynthesis.
+        // Phase still updates so filters/UI reflect the stage.
         await _initialization.InitializeAsync();
 
         var room = await _rooms.TransitionPhaseAsync(
             "main", CollaborationPhase.FinalSynthesis, force: true);
 
-        Assert.Equal(RoomStatus.Completed, room.Status);
+        Assert.Equal(RoomStatus.Active, room.Status);
         Assert.Equal(CollaborationPhase.FinalSynthesis, room.CurrentPhase);
     }
 

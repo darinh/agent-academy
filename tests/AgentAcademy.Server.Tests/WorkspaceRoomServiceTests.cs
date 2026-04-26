@@ -135,6 +135,82 @@ public sealed class WorkspaceRoomServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task EnsureDefault_SelfHeals_PoisonedCompletedMainRoom()
+    {
+        // B1 self-heal: a main collaboration room left in Status=Completed by
+        // the pre-fix sprint-freeze path must be reset to Idle on the next
+        // EnsureDefault invocation, so it's adopted as the workspace default
+        // (instead of being skipped, forcing creation of a fresh main with a
+        // Guid suffix and stranding the user's history).
+        // The test catalog (TestServiceGraph) uses DefaultRoomName="Main Room";
+        // the self-heal predicate is strict on _catalog.DefaultRoomName, so the
+        // seeded room must use that exact name. (In production the catalog name
+        // is "Main Collaboration Room".)
+        SeedRoom("ws-main", "Main Room", "/home/user/project",
+            status: nameof(RoomStatus.Completed),
+            phase: nameof(CollaborationPhase.FinalSynthesis));
+
+        var roomId = await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+
+        Assert.Equal("ws-main", roomId);
+        var healed = await Db.Rooms.FindAsync("ws-main");
+        Assert.NotNull(healed);
+        // Status reset → writable; Phase preserved (next stage sync overwrites it).
+        Assert.Equal(nameof(RoomStatus.Idle), healed!.Status);
+        Assert.Equal(nameof(CollaborationPhase.FinalSynthesis), healed.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task EnsureDefault_SelfHeal_HealsOnlyCanonicalMain_LeavesHistoricalDuplicatesCompleted()
+    {
+        // Reviewer's high-severity edge case: a workspace can accumulate multiple
+        // historical Completed mains (same name, different ids) from prior
+        // sprints. Self-heal must reset only the canonical one (deterministic
+        // ORDER BY) so historical duplicates stay terminal and don't get
+        // resurrected as live rooms.
+        var older = SeedRoom("ws-main-old", "Main Room", "/home/user/project",
+            status: nameof(RoomStatus.Completed));
+        // Force the older row to have an earlier UpdatedAt so any incidental
+        // recency check would prefer it; the actual ordering is by Name match
+        // → DefaultRoomId match → Id alphabetical.
+        older.UpdatedAt = DateTime.UtcNow.AddDays(-7);
+        Db.SaveChanges();
+        SeedRoom("ws-main-new", "Main Room", "/home/user/project",
+            status: nameof(RoomStatus.Completed));
+
+        await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+
+        var oldRoom = await Db.Rooms.FindAsync("ws-main-old");
+        var newRoom = await Db.Rooms.FindAsync("ws-main-new");
+        // Exactly one is healed (the alphabetically-first id since neither is
+        // _catalog.DefaultRoomId): "ws-main-new" > "ws-main-old", so old wins.
+        var healed = new[] { oldRoom!, newRoom! }.Count(r => r.Status == nameof(RoomStatus.Idle));
+        var stillCompleted = new[] { oldRoom!, newRoom! }.Count(r => r.Status == nameof(RoomStatus.Completed));
+        Assert.Equal(1, healed);
+        Assert.Equal(1, stillCompleted);
+    }
+
+    [Fact]
+    public async Task EnsureDefault_SelfHeal_LeavesCompletedNonMainRoomsAlone()
+    {
+        // The self-heal must only target main rooms — a Completed breakout/task
+        // room is legitimately frozen by sprint completion and must stay that
+        // way. Strict criterion: exact DefaultRoomName OR catalog DefaultRoomId
+        // — a user-named "Security Collaboration Room" must NOT be revived.
+        SeedRoom("breakout-x", "Breakout X", "/home/user/project",
+            status: nameof(RoomStatus.Completed));
+        SeedRoom("user-collab", "Security Collaboration Room", "/home/user/project",
+            status: nameof(RoomStatus.Completed));
+
+        await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await Db.Rooms.FindAsync("breakout-x"))!.Status);
+        Assert.Equal(nameof(RoomStatus.Completed),
+            (await Db.Rooms.FindAsync("user-collab"))!.Status);
+    }
+
+    [Fact]
     public async Task EnsureDefault_RetiresLegacyRoom_WithSameWorkspace()
     {
         // Seed the legacy default room with same workspace

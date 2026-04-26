@@ -13,6 +13,14 @@ public interface IRoomLifecycleService
     Task<bool> IsMainCollaborationRoomAsync(string roomId);
 
     /// <summary>
+    /// Returns the set of room IDs that represent the persistent main collaboration
+    /// room for <paramref name="workspacePath"/> — at most one workspace-resolved
+    /// main room ID plus the legacy catalog default room ID. Used by terminal-status
+    /// guards to keep the main room writable across sprint boundaries (B1).
+    /// </summary>
+    Task<HashSet<string>> GetExemptMainRoomIdsAsync(string workspacePath);
+
+    /// <summary>
     /// Archives a non-main collaboration room. Already archived rooms are a no-op.
     /// </summary>
     Task CloseRoomAsync(string roomId);
