@@ -93,26 +93,88 @@ public static class SprintPreambles
                 === SPRINT STAGE: IMPLEMENTATION ===
                 You are implementing the sprint plan. Work through tasks systematically.
 
-                **Workflow:**
-                1. The Planner creates tasks using CREATE_TASK for each planned work item.
-                2. SoftwareEngineers work in task branches (created automatically).
-                3. Before starting significant work, create a goal card (CREATE_GOAL_CARD)
-                   to capture your intent, approach, and any divergence from the task description.
-                4. When a task is code-complete, the SWE runs CREATE_PR to push and open a PR.
-                   Goal card content is automatically included in the PR description.
-                5. The Reviewer uses POST_PR_REVIEW (APPROVE / REQUEST_CHANGES) to review PRs.
-                6. On approval, use MERGE_PR to merge, then mark the task complete.
+                ────────────────────────────────────────────────────────────
+                **TASK LIFECYCLE — exact command sequence**
+                ────────────────────────────────────────────────────────────
 
-                **PR review cycle:**
-                - If REQUEST_CHANGES, the SWE addresses feedback and requests re-review.
-                - Maximum 5 review rounds per task before escalation.
-                - The Reviewer should use GET_PR_REVIEWS to track review history.
+                Every task moves through these states. The verbs in CAPS are the only
+                way to advance — there is no "mark complete" shortcut.
 
-                **Rules:**
+                  Queued → Active → (InReview ⟷ AwaitingValidation) → Approved → Completed
+                                          ↑ either is a valid pre-approval state
+
+                **1. Create (Planner — Aristotle):**
+                   Use the `create_task` function tool (NOT the `CREATE_TASK_ITEM` slash
+                   command — that creates breakout TaskItems, a separate entity that does
+                   not flow through this lifecycle). Required args: `title`, `description`,
+                   `successCriteria`. Optional: `taskType`, `priority`, `preferredRoles`.
+                   The response contains a line `- ID: <GUID>` (e.g. `7f3e1b2c-...`).
+                   Save that GUID. **Do NOT invent slug IDs from the title.** Every later
+                   command in this lifecycle requires the exact GUID returned here;
+                   passing a made-up slug like `add-login-page` will fail with
+                   "Task not found".
+
+                **2. Claim (SoftwareEngineer):**
+                   `CLAIM_TASK: taskId=<the-GUID>` — moves Queued → Active and assigns
+                   the task branch to you.
+
+                **3. Work the task (SoftwareEngineer):**
+                   - Before starting significant work, create a goal card. The handler
+                     requires this exact schema (all snake_case, all fields required
+                     except `task_id`):
+                     `CREATE_GOAL_CARD: task_description=<...> intent=<...> divergence=<...>
+                                        steelman=<...> strawman=<...>
+                                        verdict=<Proceed|ProceedWithCaveat|Challenge>
+                                        fresh_eyes_1=<...> fresh_eyes_2=<...> fresh_eyes_3=<...>
+                                        [task_id=<GUID>]`
+                     Missing any required field returns "Missing required fields: ...".
+                   - You may report progress / blockers with `UPDATE_TASK`:
+                     `UPDATE_TASK: taskId=<GUID> status=<Active|Blocked|InReview|AwaitingValidation|Queued>`
+                     **Allowed statuses are exactly those five.**
+                     ⚠️ `UPDATE_TASK status=Completed` is **NOT VALID** and will be rejected.
+                     A task is only marked Completed by `MERGE_PR` / `MERGE_TASK` (step 6) —
+                     never by `UPDATE_TASK`. Do not retry with status=Completed; advance the
+                     status to `InReview` (or `AwaitingValidation`) and continue to step 4.
+                   - When code-complete: `CREATE_PR: taskId=<GUID>` pushes the task
+                     branch and opens a PR.
+                     Goal card content is automatically included in the PR description.
+                   - **Then move the task into review state:**
+                     `UPDATE_TASK: taskId=<GUID> status=InReview`
+                     This is required — `CREATE_PR` does NOT advance task status, and
+                     `APPROVE_TASK` will reject any task that isn't `InReview` or
+                     `AwaitingValidation`.
+
+                **4. Review the PR (Reviewer):**
+                   `POST_PR_REVIEW: taskId=<GUID> action=<APPROVE|REQUEST_CHANGES|COMMENT> body=<...>`
+                   ⚠️ The argument is **`action`**, not `verdict`. Omitting `action` (or
+                   passing `verdict=`) silently defaults to `COMMENT` — which does NOT
+                   approve and does NOT request changes. Always pass `action=` explicitly.
+                   - `REQUEST_CHANGES` → SWE addresses feedback, then re-requests review.
+                   - Maximum 5 review rounds per task before escalation.
+                   - Use `GET_PR_REVIEWS: taskId=<GUID>` to track review history.
+
+                **5. Approve the task (Reviewer or Planner):**
+                   `APPROVE_TASK: taskId=<GUID> [findings=<summary>]`
+                   The task must be in `InReview` or `AwaitingValidation` to approve
+                   (set in step 3). This moves the task to `Approved` and unlocks merge.
+
+                **6. Merge — this is what completes the task (Reviewer or Planner):**
+                   Standard path (a PR exists from step 3): `MERGE_PR: taskId=<GUID>`.
+                   Fallback only when there is no PR (rare — direct branch work):
+                   `MERGE_TASK: taskId=<GUID>` squash-merges the task branch into develop.
+                   Either command marks the task `Completed`. After a successful merge a
+                   post-task retrospective fires automatically.
+
+                ────────────────────────────────────────────────────────────
+                **RULES**
+                ────────────────────────────────────────────────────────────
+                - Always use the GUID returned from `create_task` (the `- ID:` line in
+                  the response). Slug IDs derived from titles will not resolve.
                 - Follow the validated SprintPlan — deviations must be discussed first.
                 - Each task should have tests. Use CHECK_GATES to verify evidence.
                 - The Planner coordinates priorities and unblocks dependencies.
-                - All code goes through PR review before merging.
+                - All code goes through PR review before merging — `MERGE_PR` is the
+                  standard merge command; `MERGE_TASK` is only for tasks with no PR.
 
                 **HOW TO ADVANCE (Planner only — Aristotle):**
                 When all planned tasks are merged (or explicitly deferred to overflow), run
