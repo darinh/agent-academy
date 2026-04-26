@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from "react";
+import { memo, useState, useCallback, useEffect } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   Button,
@@ -18,28 +18,115 @@ import {
   isAgentThinking,
 } from "./sidebarUtils";
 
-/* ── View navigation items ─────────────────────────────────────── */
+/* ── View navigation groups ─────────────────────────────────────
+ *
+ * Six logical groups replace the previous flat 18-item nav. Order roughly
+ * follows the user-supplied 2026-04-08 priority spec
+ * (overview → conversation → messages → plan → task → timeline → metrics → commands)
+ * while keeping conversation as room-click rather than a tab (per 2026-04-09 spec).
+ * Each group can be collapsed by the user; collapsed state persists per group
+ * via localStorage. Defaults: all expanded so first-time / mobile users see
+ * everything; this also preserves existing test assertions that all nav items
+ * render.
+ */
 
-const NAV_ITEMS = [
-  { value: "overview", icon: "🔲", label: "Overview" },
-  { value: "search", icon: "🔍", label: "Search" },
-  { value: "directMessages", icon: "✉️", label: "Messages" },
-  { value: "plan", icon: "📄", label: "Plan" },
-  { value: "tasks", icon: "📋", label: "Tasks" },
-  { value: "artifacts", icon: "📦", label: "Artifacts" },
-  { value: "timeline", icon: "⏱️", label: "Timeline" },
-  { value: "activity", icon: "⚡", label: "Activity" },
-  { value: "sprint", icon: "🏃", label: "Sprint" },
-  { value: "dashboard", icon: "📊", label: "Metrics" },
-  { value: "commands", icon: "⌨️", label: "Commands" },
-  { value: "memories", icon: "🧠", label: "Memory" },
-  { value: "knowledge", icon: "📖", label: "Knowledge" },
-  { value: "specs", icon: "📜", label: "Specs" },
-  { value: "digests", icon: "📚", label: "Digests" },
-  { value: "retrospectives", icon: "🔬", label: "Retros" },
-  { value: "goalCards", icon: "🎯", label: "Goals" },
-  { value: "forge", icon: "🔥", label: "Forge" },
-] as const;
+interface NavItem {
+  value: string;
+  icon: string;
+  label: string;
+}
+
+interface NavGroup {
+  id: string;
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "workspace",
+    label: "Workspace",
+    items: [
+      { value: "overview", icon: "🔲", label: "Overview" },
+      { value: "plan", icon: "📄", label: "Plan" },
+      { value: "sprint", icon: "🏃", label: "Sprint" },
+      { value: "goalCards", icon: "🎯", label: "Goals" },
+    ],
+  },
+  {
+    id: "comms",
+    label: "Communication",
+    items: [
+      { value: "directMessages", icon: "✉️", label: "Messages" },
+      { value: "search", icon: "🔍", label: "Search" },
+    ],
+  },
+  {
+    id: "work",
+    label: "Work",
+    items: [
+      { value: "tasks", icon: "📋", label: "Tasks" },
+      { value: "artifacts", icon: "📦", label: "Artifacts" },
+      { value: "forge", icon: "🔥", label: "Forge" },
+    ],
+  },
+  {
+    id: "activity",
+    label: "Activity",
+    items: [
+      { value: "timeline", icon: "⏱️", label: "Timeline" },
+      { value: "activity", icon: "⚡", label: "Activity" },
+      { value: "dashboard", icon: "📊", label: "Metrics" },
+    ],
+  },
+  {
+    id: "knowledge",
+    label: "Knowledge",
+    items: [
+      { value: "memories", icon: "🧠", label: "Memory" },
+      { value: "knowledge", icon: "📖", label: "Knowledge" },
+      { value: "specs", icon: "📜", label: "Specs" },
+      { value: "digests", icon: "📚", label: "Digests" },
+      { value: "retrospectives", icon: "🔬", label: "Retros" },
+    ],
+  },
+  {
+    id: "tools",
+    label: "Tools",
+    items: [
+      { value: "commands", icon: "⌨️", label: "Commands" },
+    ],
+  },
+];
+
+const NAV_GROUP_STORAGE_KEY = "aa.sidebar.collapsedGroups.v1";
+
+function loadCollapsedGroups(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const storage = window.localStorage;
+    if (!storage) return new Set();
+    const raw = storage.getItem(NAV_GROUP_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((s): s is string => typeof s === "string"));
+  } catch {
+    // Privacy mode, disabled storage, quota errors, or malformed JSON — degrade silently
+    return new Set();
+  }
+}
+
+function saveCollapsedGroups(set: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const storage = window.localStorage;
+    if (!storage) return;
+    storage.setItem(NAV_GROUP_STORAGE_KEY, JSON.stringify([...set]));
+  } catch {
+    // Privacy mode / quota / permission errors — degrade silently
+  }
+}
 
 /* ── Sidebar Panel ───────────────────────────────────────────────── */
 
@@ -75,6 +162,23 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [cleaningUp, setCleaningUp] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => loadCollapsedGroups());
+
+  useEffect(() => {
+    saveCollapsedGroups(collapsedGroups);
+  }, [collapsedGroups]);
+
+  const toggleGroup = useCallback((groupId: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
 
   const handleCleanup = useCallback(async () => {
     if (!props.onCleanupRooms) return;
@@ -163,19 +267,44 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             <div className={s.sprintIndicator}>🏃 Sprint {props.sprintVersion}</div>
           )}
 
-          {/* View Navigation */}
+          {/* View Navigation (grouped, collapsible) */}
           <div className={s.navSection}>
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.value}
-                className={mergeClasses(s.navItem, props.activeView === item.value && s.navItemActive)}
-                onClick={() => props.onViewChange(item.value)}
-                type="button"
-              >
-                <span className={s.navIcon}>{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
+            {NAV_GROUPS.map((group) => {
+              const isCollapsed = collapsedGroups.has(group.id);
+              const groupContainsActive = group.items.some((i) => i.value === props.activeView);
+              return (
+                <div key={group.id} className={s.navGroup}>
+                  <button
+                    type="button"
+                    className={s.navGroupHeader}
+                    onClick={() => toggleGroup(group.id)}
+                    aria-expanded={!isCollapsed}
+                    aria-controls={isCollapsed ? undefined : `nav-group-${group.id}`}
+                  >
+                    <span className={s.navGroupChevron} aria-hidden="true">
+                      {isCollapsed ? "▸" : "▾"}
+                    </span>
+                    <span className={s.navGroupLabel}>{group.label}</span>
+                    {isCollapsed && groupContainsActive && (
+                      <span className={s.navGroupActiveDot} aria-hidden="true" />
+                    )}
+                  </button>
+                  <div id={`nav-group-${group.id}`} hidden={isCollapsed}>
+                    {group.items.map((item) => (
+                      <button
+                        key={item.value}
+                        className={mergeClasses(s.navItem, props.activeView === item.value && s.navItemActive)}
+                        onClick={() => props.onViewChange(item.value)}
+                        type="button"
+                      >
+                        <span className={s.navIcon}>{item.icon}</span>
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Rooms */}
@@ -324,8 +453,8 @@ const SidebarPanel = memo(function SidebarPanel(props: {
         </div>
       ) : (
         <div className={s.compactSidebar}>
-          {/* Nav icons in collapsed mode */}
-          {NAV_ITEMS.map((item) => (
+          {/* Nav icons in collapsed mode (flattened across all groups) */}
+          {NAV_GROUPS.flatMap((g) => g.items).map((item) => (
             <Tooltip key={item.value} content={item.label} relationship="label" positioning="after">
               <button
                 className={mergeClasses(s.compactButton, props.activeView === item.value ? s.compactButtonActive : undefined)}
