@@ -732,6 +732,68 @@ public class MessageServiceTests : IDisposable
                 "nonexistent", "engineer-1", "Hephaestus", "SoftwareEngineer", "content"));
     }
 
+    [Fact]
+    public async Task PostBreakoutMessageAsync_AgentMessage_RelaysSummaryToParentRoom()
+    {
+        await SeedRoomAsync("room-1");
+        await SeedBreakoutRoomAsync("br-1", "room-1");
+        var svc = CreateService();
+
+        await svc.PostBreakoutMessageAsync(
+            "br-1", "engineer-1", "Hephaestus", "SoftwareEngineer",
+            "I think we should split the task service into command + query halves");
+
+        var db = await GetDbAsync();
+        var parentMsgs = await db.Messages
+            .Where(m => m.RoomId == "room-1")
+            .ToListAsync();
+
+        // Exactly one relay system-message should appear in the parent room.
+        var relays = parentMsgs.Where(m => m.Content.StartsWith("💬 ")).ToList();
+        Assert.Single(relays);
+        Assert.Equal(nameof(MessageSenderKind.System), relays[0].SenderKind);
+        Assert.Contains("Hephaestus", relays[0].Content);
+        Assert.Contains("Breakout-br-1", relays[0].Content);
+        Assert.Contains("split the task service", relays[0].Content);
+    }
+
+    [Fact]
+    public async Task PostBreakoutMessageAsync_SystemSender_DoesNotRelay()
+    {
+        await SeedRoomAsync("room-1");
+        await SeedBreakoutRoomAsync("br-1", "room-1");
+        var svc = CreateService();
+
+        await svc.PostBreakoutMessageAsync(
+            "br-1", "system", "System", "System", "Agent has joined the breakout");
+
+        var db = await GetDbAsync();
+        var parentMsgs = await db.Messages
+            .Where(m => m.RoomId == "room-1")
+            .ToListAsync();
+
+        Assert.Empty(parentMsgs); // system bookkeeping must not become parent-room noise
+    }
+
+    [Fact]
+    public async Task PostBreakoutMessageAsync_TerminalParentRoom_SkipsRelayWithoutThrowing()
+    {
+        await SeedRoomAsync("room-1", status: "Completed");
+        await SeedBreakoutRoomAsync("br-1", "room-1");
+        var svc = CreateService();
+
+        // Should still persist the breakout message, just skip the parent relay
+        // (parent is read-only — the breakout is being recalled/closed).
+        await svc.PostBreakoutMessageAsync(
+            "br-1", "engineer-1", "Hephaestus", "SoftwareEngineer", "final note");
+
+        var db = await GetDbAsync();
+        var brMsgs = await db.BreakoutMessages.Where(m => m.BreakoutRoomId == "br-1").ToListAsync();
+        Assert.Single(brMsgs);
+        var parentMsgs = await db.Messages.Where(m => m.RoomId == "room-1").ToListAsync();
+        Assert.Empty(parentMsgs);
+    }
+
     // ── TrimMessagesAsync ────────────────────────────────────────
 
     [Fact]

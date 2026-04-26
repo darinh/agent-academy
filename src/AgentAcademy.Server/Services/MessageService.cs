@@ -553,6 +553,31 @@ public sealed class MessageService : IMessageService
 
         br.UpdatedAt = now;
         await _db.SaveChangesAsync();
+
+        // Visibility relay: when an agent (not "system") speaks in a breakout,
+        // mirror a one-line summary into the parent room so a human watching
+        // `main` can see that agents are actively conversing without having
+        // to navigate into every breakout. Only Agent messages are relayed
+        // (system bookkeeping is excluded — it would be pure noise).
+        // Best-effort: a relay failure must not abort the breakout write.
+        if (senderId != "system")
+        {
+            try
+            {
+                var parent = await _db.Rooms.FindAsync(br.ParentRoomId);
+                if (parent != null && !IsTerminalRoomStatus(parent.Status))
+                {
+                    var summary = $"💬 {senderName} [in {br.Name}]: {Truncate(content, 200)}";
+                    await PostSystemMessageAsync(br.ParentRoomId, summary);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Breakout-to-parent relay failed for breakout {BreakoutId} -> parent {ParentId}",
+                    breakoutRoomId, br.ParentRoomId);
+            }
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────
