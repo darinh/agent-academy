@@ -102,7 +102,7 @@ internal sealed class TestServiceGraph : IDisposable
 
         RoomService = new RoomService(
             Db, NullLogger<RoomService>.Instance,
-            ActivityPublisher, MessageService, RoomSnapshotBuilder, PhaseTransitionValidator);
+            ActivityPublisher, MessageService, RoomSnapshotBuilder, PhaseTransitionValidator, Catalog);
 
         RoomLifecycleService = new RoomLifecycleService(
             Db, NullLogger<RoomLifecycleService>.Instance, Catalog, ActivityPublisher);
