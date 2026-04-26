@@ -755,8 +755,11 @@ public class DmCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task DmController_SendMessage_HumanGetsHumanIdentity()
+    public async Task DmController_SendMessage_HumanGetsGitHubLoginAsName()
     {
+        // CreateHumanUser sets ClaimTypes.Name = "darin" (the GitHub login).
+        // The DM keeps the canonical "human" senderId for routing/threading,
+        // but exposes the login as senderName so the agent sees a real identity.
         var controller = CreateDmController(CreateHumanUser());
 
         var result = await controller.SendMessage(
@@ -767,7 +770,7 @@ public class DmCommandTests : IDisposable
 
         var msg = Assert.IsType<DmMessage>(created.Value);
         Assert.Equal("human", msg.SenderId);
-        Assert.Equal("Human", msg.SenderName);
+        Assert.Equal("darin", msg.SenderName);
         Assert.Equal("Human", msg.SenderRole);
         Assert.True(msg.IsFromHuman);
     }

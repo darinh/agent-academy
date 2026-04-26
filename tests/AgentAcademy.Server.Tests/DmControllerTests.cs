@@ -50,11 +50,12 @@ public sealed class DmControllerTests : IDisposable
 
     public void Dispose() => _svc.Dispose();
 
-    private void SetUser(bool isConsultant)
+    private void SetUser(bool isConsultant, string? login = null)
     {
+        var nameClaim = login ?? (isConsultant ? "consultant" : "human");
         var claims = new List<Claim>
         {
-            new(ClaimTypes.Name, isConsultant ? "consultant" : "human"),
+            new(ClaimTypes.Name, nameClaim),
         };
         if (isConsultant)
             claims.Add(new Claim(ClaimTypes.Role, "Consultant"));
@@ -123,9 +124,39 @@ public sealed class DmControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task SendMessage_AsHuman_Returns201WithCorrectSender()
+    public async Task SendMessage_AsHuman_UsesGitHubLoginAsSenderName()
     {
-        SetUser(isConsultant: false);
+        SetUser(isConsultant: false, login: "octocat");
+
+        var result = await _controller.SendMessage("test-agent",
+            new SendDmRequest("Hello agent"));
+
+        var obj = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(201, obj.StatusCode);
+
+        var msg = Assert.IsType<DmMessage>(obj.Value);
+        // senderId stays as the canonical "human" principal so DM threading
+        // (HumanSideSenderIds) and IsFromHuman classification still work.
+        Assert.Equal("human", msg.SenderId);
+        // senderName carries the GitHub login so the agent sees a real identity.
+        Assert.Equal("octocat", msg.SenderName);
+        Assert.Equal("Human", msg.SenderRole);
+        Assert.Equal("Hello agent", msg.Content);
+        Assert.True(msg.IsFromHuman);
+    }
+
+    [Fact]
+    public async Task SendMessage_Unauthenticated_FallsBackToGenericHuman()
+    {
+        // Replace the default authenticated test user with an anonymous one
+        // (the constructor calls SetUser; override that here).
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity()) // no auth type → IsAuthenticated == false
+            }
+        };
 
         var result = await _controller.SendMessage("test-agent",
             new SendDmRequest("Hello agent"));
@@ -136,7 +167,6 @@ public sealed class DmControllerTests : IDisposable
         var msg = Assert.IsType<DmMessage>(obj.Value);
         Assert.Equal("human", msg.SenderId);
         Assert.Equal("Human", msg.SenderName);
-        Assert.Equal("Hello agent", msg.Content);
         Assert.True(msg.IsFromHuman);
     }
 

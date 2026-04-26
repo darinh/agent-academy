@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Channels;
 using AgentAcademy.Server.Services;
@@ -98,10 +99,21 @@ public class DmController : ControllerBase
         if (agent is null)
             return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found.", "agent_not_found"));
 
-        // Derive identity from authenticated claims
+        // Derive identity from authenticated claims.
+        // senderId stays as the canonical principal ("human" / "consultant") because
+        // downstream DM routing, thread aggregation, IsFromHuman classification, and
+        // SenderKind detection all key off these reserved IDs (see
+        // MessageService.HumanSideSenderIds and DmController.IsFromHuman mapping).
+        // The GitHub login is exposed only in senderName so the agent sees a real
+        // identity in the chat label without changing routing semantics.
         var isConsultant = User.IsInRole("Consultant");
+        var githubLogin = User.Identity?.IsAuthenticated == true
+            ? User.FindFirst(ClaimTypes.Name)?.Value
+            : null;
         var senderId = isConsultant ? "consultant" : "human";
-        var senderName = isConsultant ? "Consultant" : "Human";
+        var senderName = isConsultant
+            ? "Consultant"
+            : (githubLogin ?? "Human");
         var senderRole = isConsultant ? "Consultant" : "Human";
 
         // Find the default room for context

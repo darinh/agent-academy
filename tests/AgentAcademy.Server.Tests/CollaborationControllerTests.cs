@@ -174,6 +174,32 @@ public sealed class CollaborationControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task PostHumanMessage_AuthenticatedUser_UsesGitHubLoginAsSender()
+    {
+        SetAuthenticatedUser();
+        var result = await _controller.PostHumanMessage("main", new HumanMessageRequest("Hi"));
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var envelope = Assert.IsType<ChatEnvelope>(ok.Value);
+        // SetAuthenticatedUser sets ClaimTypes.Name = "test-user" (the GitHub login).
+        // The display-name claim ("urn:github:name") is intentionally ignored —
+        // the chat sender label must be the stable login, not the mutable display name.
+        Assert.Equal("test-user", envelope.SenderId);
+        Assert.Equal("test-user", envelope.SenderName);
+        Assert.Equal("Human", envelope.SenderRole);
+    }
+
+    [Fact]
+    public async Task PostHumanMessage_Unauthenticated_FallsBackToGenericHuman()
+    {
+        // No SetAuthenticatedUser → MessageService applies its default identity.
+        var result = await _controller.PostHumanMessage("main", new HumanMessageRequest("Hi"));
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var envelope = Assert.IsType<ChatEnvelope>(ok.Value);
+        Assert.Equal("human", envelope.SenderId);
+        Assert.Equal("Human", envelope.SenderName);
+    }
+
+    [Fact]
     public async Task PostHumanMessage_UnknownRoom_ReturnsNotFound()
     {
         // MessageService throws InvalidOperationException for unknown room

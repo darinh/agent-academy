@@ -203,14 +203,18 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            // Extract identity from authenticated user claims
+            // Extract identity from authenticated user claims.
+            // Prefer the GitHub login (e.g. "darin") as the displayed sender name
+            // so the chat shows a real, recognisable identity instead of "Human".
+            // The display-name claim ("urn:github:name") is intentionally not used:
+            // it can be unset, can change, and isn't a stable user identifier.
             string? userId = null;
             string? userName = null;
             string? userRole = null;
             if (User.Identity?.IsAuthenticated == true)
             {
                 userId = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
-                userName = User.FindFirst("urn:github:name")?.Value ?? userId;
+                userName = userId;
                 userRole = User.IsInRole("Consultant") ? "Consultant" : "Human";
             }
 
