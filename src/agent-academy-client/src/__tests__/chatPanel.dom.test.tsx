@@ -182,26 +182,82 @@ function renderChat(props: RenderProps = {}) {
   } = props;
 
   const user = userEvent.setup();
+
+  // Mutable record of the latest props applied to ChatPanel. Successive
+  // rerenderWith calls merge into this so updates accumulate (otherwise the
+  // second rerender would silently revert the first).
+  const current: Required<Omit<RenderProps, "readOnly" | "hiddenFilters" | "agentLocations" | "configuredAgents" | "onCreateSession" | "onToggleAgent">> & Pick<RenderProps, "readOnly" | "hiddenFilters" | "agentLocations" | "configuredAgents" | "onCreateSession" | "onToggleAgent"> = {
+    room,
+    loading,
+    thinkingAgents,
+    connectionStatus,
+    onSendMessage,
+    readOnly,
+    hiddenFilters,
+    agentLocations,
+    configuredAgents,
+    onCreateSession,
+    onToggleAgent,
+  };
+
   const result = render(
     createElement(
       FluentProvider,
       { theme: webDarkTheme },
       createElement(ChatPanel, {
-        room,
-        loading,
-        thinkingAgents,
-        connectionStatus,
-        onSendMessage,
-        readOnly,
-        hiddenFilters,
-        agentLocations,
-        configuredAgents,
-        onCreateSession,
-        onToggleAgent,
+        room: current.room,
+        loading: current.loading,
+        thinkingAgents: current.thinkingAgents,
+        connectionStatus: current.connectionStatus,
+        onSendMessage: current.onSendMessage,
+        readOnly: current.readOnly,
+        hiddenFilters: current.hiddenFilters,
+        agentLocations: current.agentLocations,
+        configuredAgents: current.configuredAgents,
+        onCreateSession: current.onCreateSession,
+        onToggleAgent: current.onToggleAgent,
       }),
     ),
   );
-  return { ...result, user, onSendMessage };
+
+  // Re-render with updated props while preserving the same ChatPanel instance,
+  // simulating SignalR delivering new messages or other prop changes. Updates
+  // are merged into `current` so multiple rerenders compose correctly.
+  const rerenderWith = (next: RenderProps) => {
+    if (next.room !== undefined) current.room = next.room;
+    if (next.loading !== undefined) current.loading = next.loading;
+    if (next.thinkingAgents !== undefined) current.thinkingAgents = next.thinkingAgents;
+    if (next.connectionStatus !== undefined) current.connectionStatus = next.connectionStatus;
+    if (next.onSendMessage !== undefined) current.onSendMessage = next.onSendMessage;
+    if (next.readOnly !== undefined) current.readOnly = next.readOnly;
+    if (next.hiddenFilters !== undefined) current.hiddenFilters = next.hiddenFilters;
+    if (next.agentLocations !== undefined) current.agentLocations = next.agentLocations;
+    if (next.configuredAgents !== undefined) current.configuredAgents = next.configuredAgents;
+    if (next.onCreateSession !== undefined) current.onCreateSession = next.onCreateSession;
+    if (next.onToggleAgent !== undefined) current.onToggleAgent = next.onToggleAgent;
+
+    result.rerender(
+      createElement(
+        FluentProvider,
+        { theme: webDarkTheme },
+        createElement(ChatPanel, {
+          room: current.room,
+          loading: current.loading,
+          thinkingAgents: current.thinkingAgents,
+          connectionStatus: current.connectionStatus,
+          onSendMessage: current.onSendMessage,
+          readOnly: current.readOnly,
+          hiddenFilters: current.hiddenFilters,
+          agentLocations: current.agentLocations,
+          configuredAgents: current.configuredAgents,
+          onCreateSession: current.onCreateSession,
+          onToggleAgent: current.onToggleAgent,
+        }),
+      ),
+    );
+  };
+
+  return { ...result, user, onSendMessage, rerenderWith };
 }
 
 // ── Setup ──────────────────────────────────────────────────────────────
@@ -212,9 +268,15 @@ beforeEach(() => {
   mockGetRoomMessages.mockResolvedValue({ messages: [], hasMore: false });
   // jsdom doesn't implement scrollTo
   Element.prototype.scrollTo = vi.fn();
+  // Defensive cleanup: U6/U8 tests touch this localStorage key; clearing
+  // here prevents leaks between tests if any test fails before its own cleanup.
+  try { localStorage.removeItem("aa-default-expand"); } catch { /* */ }
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  try { localStorage.removeItem("aa-default-expand"); } catch { /* */ }
+});
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
@@ -887,6 +949,351 @@ describe("ChatPanel (interactive)", () => {
       );
       expect(tailFetches).toHaveLength(0);
       expect(screen.queryByTestId("previous-session-divider")).not.toBeInTheDocument();
+    });
+  });
+
+  // ── U6: expanded messages survive new arrivals ────────────────────────
+  // Audit reference: REQUEST_AUDIT.md U6 — "Don't auto-collapse expanded
+  // messages on new arrival". Implementation: ChatPanel keeps an `overrides`
+  // Set that is reset only on room change or default-toggle, not on message
+  // arrival. These tests lock that behavior in.
+
+  describe("U6: expand state preservation", () => {
+    const longContent = "B".repeat(400);
+
+    it("keeps a manually-expanded message expanded after a new message arrives", async () => {
+      const initialRoom = makeRoom({
+        recentMessages: [makeMessage({ id: "long-1", content: longContent })],
+      });
+      const { user, rerenderWith } = renderChat({ room: initialRoom });
+
+      // Expand the message manually.
+      await user.click(screen.getByText("Show more"));
+      expect(screen.getByText("Show less")).toBeInTheDocument();
+
+      // Simulate a new message arriving (same room, new entry appended).
+      rerenderWith({
+        room: {
+          ...initialRoom,
+          recentMessages: [
+            ...initialRoom.recentMessages,
+            makeMessage({ id: "new-1", content: "Just-arrived message" }),
+          ],
+          updatedAt: "2026-04-10T12:01:00Z",
+        },
+      });
+
+      // The originally-expanded message must still be expanded.
+      expect(screen.getByText("Show less")).toBeInTheDocument();
+      expect(screen.queryByText("Show more")).not.toBeInTheDocument();
+      expect(screen.getByText("Just-arrived message")).toBeInTheDocument();
+    });
+
+    it("keeps a manually-collapsed message collapsed when default is expanded and new messages arrive", async () => {
+      // defaultExpanded=true; user collapses one message; arrival shouldn't undo the override.
+      try { localStorage.setItem("aa-default-expand", "true"); } catch { /* */ }
+      const initialRoom = makeRoom({
+        recentMessages: [
+          makeMessage({ id: "long-a", content: longContent }),
+          makeMessage({ id: "long-b", content: longContent }),
+        ],
+      });
+      const { user, rerenderWith } = renderChat({ room: initialRoom });
+
+      // Both start expanded; collapse the first one.
+      const showLessButtons = screen.getAllByText("Show less");
+      expect(showLessButtons).toHaveLength(2);
+      await user.click(showLessButtons[0]);
+      expect(screen.getAllByText("Show less")).toHaveLength(1);
+      expect(screen.getAllByText("Show more")).toHaveLength(1);
+
+      // New message arrives.
+      rerenderWith({
+        room: {
+          ...initialRoom,
+          recentMessages: [
+            ...initialRoom.recentMessages,
+            makeMessage({ id: "long-c", content: longContent }),
+          ],
+        },
+      });
+
+      // First message stays collapsed; the new third message is expanded by default.
+      expect(screen.getAllByText("Show less")).toHaveLength(2);
+      expect(screen.getAllByText("Show more")).toHaveLength(1);
+      // Cleanup of localStorage handled by global afterEach.
+    });
+
+    it("resets manual overrides when switching to a different room", async () => {
+      const room1 = makeRoom({
+        id: "room-1",
+        recentMessages: [makeMessage({ id: "r1-long", content: longContent })],
+      });
+      const room2 = makeRoom({
+        id: "room-2",
+        recentMessages: [makeMessage({ id: "r2-long", content: longContent })],
+      });
+      const { user, rerenderWith } = renderChat({ room: room1 });
+
+      await user.click(screen.getByText("Show more"));
+      expect(screen.getByText("Show less")).toBeInTheDocument();
+
+      // Switch rooms — overrides should clear.
+      rerenderWith({ room: room2 });
+
+      expect(screen.getByText("Show more")).toBeInTheDocument();
+      expect(screen.queryByText("Show less")).not.toBeInTheDocument();
+    });
+  });
+
+  // ── U7: scroll behavior + new-messages indicator ──────────────────────
+  // Audit reference: REQUEST_AUDIT.md U7 — "Don't auto-scroll on new
+  // message; show (v) button". Implementation: auto-scroll only when the
+  // user is near the bottom; otherwise the "New messages ↓" button surfaces
+  // and clicking it scrolls down + dismisses the indicator.
+
+  describe("U7: scroll behavior", () => {
+    function getMessageList(): HTMLElement {
+      return screen.getByRole("log", { name: /conversation messages/i });
+    }
+
+    function setScrollGeometry(el: HTMLElement, props: { scrollHeight: number; scrollTop: number; clientHeight: number }) {
+      Object.defineProperty(el, "scrollHeight", { configurable: true, value: props.scrollHeight });
+      Object.defineProperty(el, "scrollTop", { configurable: true, writable: true, value: props.scrollTop });
+      Object.defineProperty(el, "clientHeight", { configurable: true, value: props.clientHeight });
+    }
+
+    it("does not show the 'New messages ↓' button when no new messages have arrived", () => {
+      renderChat();
+      expect(screen.queryByRole("button", { name: /scroll to new messages/i })).not.toBeInTheDocument();
+    });
+
+    it("shows the 'New messages ↓' button when a message arrives while user is scrolled up", () => {
+      const initialRoom = makeRoom({
+        recentMessages: [makeMessage({ id: "m-1", content: "First" })],
+      });
+      const { rerenderWith } = renderChat({ room: initialRoom });
+
+      // Force scroll position = "not near bottom".
+      const list = getMessageList();
+      setScrollGeometry(list, { scrollHeight: 2000, scrollTop: 100, clientHeight: 600 });
+      list.dispatchEvent(new Event("scroll"));
+
+      // Clear any scrollTo calls from initial mount before delivering new message.
+      const scrollSpy = list.scrollTo as unknown as ReturnType<typeof vi.fn>;
+      scrollSpy.mockClear();
+
+      // Deliver a new message via re-render.
+      rerenderWith({
+        room: {
+          ...initialRoom,
+          recentMessages: [
+            ...initialRoom.recentMessages,
+            makeMessage({ id: "m-2", content: "Just arrived" }),
+          ],
+        },
+      });
+
+      expect(screen.getByRole("button", { name: /scroll to new messages/i })).toBeInTheDocument();
+      // Critical: a regression that auto-scrolls anyway must fail this test.
+      expect(scrollSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not show the 'New messages ↓' button when the user is near the bottom", () => {
+      const initialRoom = makeRoom({
+        recentMessages: [makeMessage({ id: "m-1", content: "First" })],
+      });
+      const { rerenderWith } = renderChat({ room: initialRoom });
+
+      const list = getMessageList();
+      // scrollHeight - scrollTop - clientHeight = 1000 - 950 - 50 = 0  (< 80 threshold)
+      setScrollGeometry(list, { scrollHeight: 1000, scrollTop: 950, clientHeight: 50 });
+      list.dispatchEvent(new Event("scroll"));
+
+      // Clear initial-mount scroll calls so we can isolate the auto-scroll
+      // triggered by the new message.
+      const scrollSpy = list.scrollTo as unknown as ReturnType<typeof vi.fn>;
+      scrollSpy.mockClear();
+
+      rerenderWith({
+        room: {
+          ...initialRoom,
+          recentMessages: [
+            ...initialRoom.recentMessages,
+            makeMessage({ id: "m-2", content: "Tail message" }),
+          ],
+        },
+      });
+
+      expect(screen.queryByRole("button", { name: /scroll to new messages/i })).not.toBeInTheDocument();
+      // Critical: when near bottom we DO want auto-scroll (instant, not smooth).
+      expect(scrollSpy).toHaveBeenCalled();
+      const lastCall = scrollSpy.mock.calls.at(-1)?.[0];
+      expect(lastCall).toMatchObject({ behavior: "auto" });
+    });
+
+    it("clicking the 'New messages ↓' button scrolls down and dismisses the indicator", async () => {
+      const initialRoom = makeRoom({
+        recentMessages: [makeMessage({ id: "m-1", content: "First" })],
+      });
+      const { user, rerenderWith } = renderChat({ room: initialRoom });
+
+      const list = getMessageList();
+      setScrollGeometry(list, { scrollHeight: 2000, scrollTop: 100, clientHeight: 600 });
+      list.dispatchEvent(new Event("scroll"));
+
+      rerenderWith({
+        room: {
+          ...initialRoom,
+          recentMessages: [
+            ...initialRoom.recentMessages,
+            makeMessage({ id: "m-2", content: "Just arrived" }),
+          ],
+        },
+      });
+
+      const indicator = screen.getByRole("button", { name: /scroll to new messages/i });
+      const scrollSpy = list.scrollTo as unknown as ReturnType<typeof vi.fn>;
+      scrollSpy.mockClear();
+
+      await user.click(indicator);
+
+      // scrollTo is called with smooth scroll to the bottom.
+      expect(scrollSpy).toHaveBeenCalled();
+      const lastCallArg = scrollSpy.mock.calls.at(-1)?.[0];
+      expect(lastCallArg).toMatchObject({ behavior: "smooth" });
+      expect(screen.queryByRole("button", { name: /scroll to new messages/i })).not.toBeInTheDocument();
+    });
+  });
+
+  // ── U8: toolbar expand/collapse all toggle ────────────────────────────
+  // Audit reference: REQUEST_AUDIT.md U8 — "Toggle all messages
+  // expanded/collapsed (room sub-menu or settings)". Implementation:
+  // SessionToolbar exposes a "⊞ Expand" / "⊟ Collapse" button that flips
+  // the defaultExpanded base state and persists it to localStorage.
+
+  describe("U8: toolbar expand/collapse all toggle", () => {
+    const longContent = "C".repeat(400);
+
+    // Note: localStorage cleanup of `aa-default-expand` is handled by the
+    // global beforeEach/afterEach above, so no per-block cleanup needed.
+
+    // The toolbar toggle button's accessible name comes from its text content
+    // ("⊞ Expand" or "⊟ Collapse"); the descriptive `title` attribute is a
+    // tooltip, not the a11y name.
+    const expandButton = () => screen.getByRole("button", { name: "⊞ Expand" });
+    const collapseButton = () => screen.getByRole("button", { name: "⊟ Collapse" });
+    const queryExpandButton = () => screen.queryByRole("button", { name: "⊞ Expand" });
+    const queryCollapseButton = () => screen.queryByRole("button", { name: "⊟ Collapse" });
+
+    it("renders the '⊞ Expand' toggle by default with collapsed messages", () => {
+      renderChat({
+        room: makeRoom({
+          recentMessages: [
+            makeMessage({ id: "long-a", content: longContent }),
+            makeMessage({ id: "long-b", content: longContent }),
+          ],
+        }),
+      });
+
+      expect(expandButton()).toBeInTheDocument();
+      expect(expandButton().getAttribute("title")).toMatch(/Expand all messages by default/i);
+      // Both long messages start collapsed.
+      expect(screen.getAllByText("Show more")).toHaveLength(2);
+      expect(screen.queryByText("Show less")).not.toBeInTheDocument();
+    });
+
+    it("clicking the toggle expands all long messages and updates the button label", async () => {
+      const { user } = renderChat({
+        room: makeRoom({
+          recentMessages: [
+            makeMessage({ id: "long-a", content: longContent }),
+            makeMessage({ id: "long-b", content: longContent }),
+          ],
+        }),
+      });
+
+      await user.click(expandButton());
+
+      // Both now expanded.
+      expect(screen.getAllByText("Show less")).toHaveLength(2);
+      expect(screen.queryByText("Show more")).not.toBeInTheDocument();
+      // Button label flipped.
+      expect(collapseButton()).toBeInTheDocument();
+      expect(queryExpandButton()).not.toBeInTheDocument();
+    });
+
+    it("clicking the toggle a second time collapses all messages again", async () => {
+      const { user } = renderChat({
+        room: makeRoom({
+          recentMessages: [
+            makeMessage({ id: "long-a", content: longContent }),
+            makeMessage({ id: "long-b", content: longContent }),
+          ],
+        }),
+      });
+
+      await user.click(expandButton());
+      expect(screen.getAllByText("Show less")).toHaveLength(2);
+      await user.click(collapseButton());
+      expect(screen.getAllByText("Show more")).toHaveLength(2);
+      expect(screen.queryByText("Show less")).not.toBeInTheDocument();
+    });
+
+    it("persists the toggle state to localStorage", async () => {
+      const { user } = renderChat({
+        room: makeRoom({
+          recentMessages: [makeMessage({ id: "long-a", content: longContent })],
+        }),
+      });
+
+      expect(localStorage.getItem("aa-default-expand")).not.toBe("true");
+      await user.click(expandButton());
+      expect(localStorage.getItem("aa-default-expand")).toBe("true");
+      await user.click(collapseButton());
+      expect(localStorage.getItem("aa-default-expand")).toBe("false");
+    });
+
+    it("restores the persisted state on next mount", () => {
+      try { localStorage.setItem("aa-default-expand", "true"); } catch { /* */ }
+      renderChat({
+        room: makeRoom({
+          recentMessages: [
+            makeMessage({ id: "long-a", content: longContent }),
+            makeMessage({ id: "long-b", content: longContent }),
+          ],
+        }),
+      });
+
+      // Both messages mounted in expanded state because of persisted preference.
+      expect(screen.getAllByText("Show less")).toHaveLength(2);
+      expect(collapseButton()).toBeInTheDocument();
+      expect(queryCollapseButton()?.getAttribute("title")).toMatch(/Collapse all messages by default/i);
+    });
+
+    it("toggling clears any per-message overrides", async () => {
+      const { user } = renderChat({
+        room: makeRoom({
+          recentMessages: [
+            makeMessage({ id: "long-a", content: longContent }),
+            makeMessage({ id: "long-b", content: longContent }),
+          ],
+        }),
+      });
+
+      // Manually expand the first; default is collapsed → first is expanded, second collapsed.
+      await user.click(screen.getAllByText("Show more")[0]);
+      expect(screen.getAllByText("Show less")).toHaveLength(1);
+      expect(screen.getAllByText("Show more")).toHaveLength(1);
+
+      // Hit toggle → expand all + clear overrides.
+      await user.click(expandButton());
+      expect(screen.getAllByText("Show less")).toHaveLength(2);
+
+      // Toggle back → collapse all, no override leaks.
+      await user.click(collapseButton());
+      expect(screen.getAllByText("Show more")).toHaveLength(2);
+      expect(screen.queryByText("Show less")).not.toBeInTheDocument();
     });
   });
 });
