@@ -1,5 +1,15 @@
 # Agent Academy — Copilot Instructions
 
+> ## 🛑 HIGHEST-PRIORITY RULE — Never approve or merge other people's PRs
+>
+> **You MUST NOT approve or merge any PR unless it was created by Darin (the human) or by `bropilot`.** This is a standing rule that overrides every other rule in this file. Self-merging your own agent-authored PRs is the specific failure this rule prevents.
+>
+> - ✅ Allowed: open PRs, push to them, monitor CI, address review comments, hand off in "blocked on human review" state.
+> - ❌ Forbidden: `gh pr merge`, `gh pr review --approve`, the GitHub `merge_pull_request` MCP method, or any equivalent — on a PR you authored.
+> - ❌ Forbidden: routing around the rule by asking another agent to merge it for you.
+>
+> If your PR has green CI and is mergeable, the legitimate stopping condition is "blocked on human review". Hand off and stop.
+
 > ## 🛑 READ FIRST — Product Vision and Active Roadmap
 >
 > Before doing **any** work in this repo, read these three files:
