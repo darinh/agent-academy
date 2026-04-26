@@ -33,6 +33,11 @@ public sealed class RoomService : IRoomService
     private readonly IRoomSnapshotBuilder _snapshots;
     private readonly IPhaseTransitionValidator _phaseValidator;
     private readonly IAgentCatalog _catalog;
+    // Optional dependency for strict ID-based main-room exemption (B1).
+    // When null (test setups that haven't been migrated), TransitionPhaseAsync
+    // falls back to the name-suffix heuristic — accepted trade-off documented
+    // inline. Production DI always wires this.
+    private readonly IRoomLifecycleService? _lifecycle;
 
     public RoomService(
         AgentAcademyDbContext db,
@@ -41,7 +46,8 @@ public sealed class RoomService : IRoomService
         IMessageService messages,
         IRoomSnapshotBuilder snapshots,
         IPhaseTransitionValidator phaseValidator,
-        IAgentCatalog catalog)
+        IAgentCatalog catalog,
+        IRoomLifecycleService? lifecycle = null)
     {
         _db = db;
         _logger = logger;
@@ -50,6 +56,7 @@ public sealed class RoomService : IRoomService
         _snapshots = snapshots;
         _phaseValidator = phaseValidator;
         _catalog = catalog;
+        _lifecycle = lifecycle;
     }
 
     // ── Room Queries ────────────────────────────────────────────
@@ -435,9 +442,34 @@ public sealed class RoomService : IRoomService
         _db.Messages.Add(msg);
 
         room.CurrentPhase = targetPhase.ToString();
-        room.Status = targetPhase == CollaborationPhase.FinalSynthesis
-            ? nameof(RoomStatus.Completed)
-            : nameof(RoomStatus.Active);
+        // B1: persistent main collaboration rooms never become terminal. Prefer
+        // strict ID-based exemption (workspace-resolved canonical main + catalog
+        // DefaultRoomId) when IRoomLifecycleService is wired (production DI).
+        // Fall back to name-suffix heuristic only when the dependency is absent
+        // (legacy test setups). Documented trade-off: under name-suffix fallback,
+        // a user-created room named like "Foo Collaboration Room" would also be
+        // exempt; under strict resolution it isn't.
+        bool isPersistentMain;
+        if (_lifecycle is not null)
+        {
+            var exempt = await _lifecycle.GetExemptMainRoomIdsAsync(room.WorkspacePath ?? string.Empty);
+            isPersistentMain = exempt.Contains(room.Id);
+        }
+        else
+        {
+            isPersistentMain = RoomLifecycleService.IsMainCollaborationRoomName(room.Name);
+        }
+        if (isPersistentMain)
+        {
+            if (room.Status != nameof(RoomStatus.Active))
+                room.Status = nameof(RoomStatus.Active);
+        }
+        else
+        {
+            room.Status = targetPhase == CollaborationPhase.FinalSynthesis
+                ? nameof(RoomStatus.Completed)
+                : nameof(RoomStatus.Active);
+        }
         room.UpdatedAt = now;
 
         Publish(ActivityEventType.PhaseChanged, roomId, null, activeTask?.Id,

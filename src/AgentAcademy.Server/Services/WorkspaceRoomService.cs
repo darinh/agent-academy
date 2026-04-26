@@ -40,6 +40,33 @@ public sealed class WorkspaceRoomService : IWorkspaceRoomService
     /// </summary>
     public async Task<string> EnsureDefaultRoomForWorkspaceAsync(string workspacePath)
     {
+        // Self-heal (B1): legacy databases may contain a main collaboration room
+        // left in Status=Completed by the pre-fix sprint-freeze path. Heal at
+        // most ONE room per workspace — the deterministic canonical main
+        // (preferring exact DefaultRoomName, then DefaultRoomId, then alphabetic
+        // Id). Healing every Completed main-named row would resurrect historical
+        // duplicates from prior sprints, contaminating the active room set.
+        // Status only — leave CurrentPhase alone (the next stage sync overwrites).
+        var poisonedCanonicalMain = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath
+                 && r.Status == nameof(RoomStatus.Completed)
+                 && (r.Name == _catalog.DefaultRoomName
+                     || r.Id == _catalog.DefaultRoomId))
+            .OrderBy(r => r.Name == _catalog.DefaultRoomName ? 0 : 1)
+            .ThenBy(r => r.Id == _catalog.DefaultRoomId ? 0 : 1)
+            .ThenBy(r => r.Id)
+            .FirstOrDefaultAsync();
+        if (poisonedCanonicalMain is not null)
+        {
+            poisonedCanonicalMain.Status = nameof(RoomStatus.Idle);
+            poisonedCanonicalMain.UpdatedAt = DateTime.UtcNow;
+            _logger.LogInformation(
+                "Self-heal: reset main collaboration room '{RoomId}' ({Name}) from Completed to Idle " +
+                "(workspace '{Workspace}'). Status was set by the pre-B1-fix sprint-freeze path.",
+                poisonedCanonicalMain.Id, poisonedCanonicalMain.Name, workspacePath);
+            await _db.SaveChangesAsync();
+        }
+
         // Phase 1: Adopt orphaned legacy room if available.
         // The legacy "main" room may contain messages and tasks from before
         // the workspace was activated. Adopting it keeps those visible.

@@ -66,18 +66,24 @@ public sealed class SprintStageService : ISprintStageService
     private readonly IActivityBroadcaster _activityBus;
     private readonly ISprintStageAdvanceAnnouncer? _announcer;
     private readonly ILogger<SprintStageService> _logger;
+    // Optional dependency for strict ID-based main-room exemption (B1).
+    // When null, SyncWorkspaceRoomsToStageAsync falls back to the name-suffix
+    // heuristic. Production DI always wires this.
+    private readonly IRoomLifecycleService? _lifecycle;
 
     public SprintStageService(
         AgentAcademyDbContext db,
         IActivityBroadcaster activityBus,
         ILogger<SprintStageService> logger,
         ISprintStageAdvanceAnnouncer? announcer = null,
-        IOptions<SprintStageOptions>? options = null)
+        IOptions<SprintStageOptions>? options = null,
+        IRoomLifecycleService? lifecycle = null)
     {
         _db = db;
         _activityBus = activityBus;
         _logger = logger;
         _announcer = announcer;
+        _lifecycle = lifecycle;
 
         var configured = options?.Value.SignOffRequiredStages ?? [];
         _signOffRequiredStages = new HashSet<string>(configured, StringComparer.Ordinal);
@@ -532,13 +538,26 @@ public sealed class SprintStageService : ISprintStageService
         var now = DateTime.UtcNow;
         var isTerminal = string.Equals(newStage, nameof(CollaborationPhase.FinalSynthesis), StringComparison.Ordinal);
 
+        // Resolve strict main-room exemption set once for this workspace (B1).
+        // Falls back to the name-suffix predicate when IRoomLifecycleService
+        // isn't wired (legacy test setups). Production DI provides it.
+        HashSet<string>? exemptIds = null;
+        if (isTerminal && _lifecycle is not null)
+            exemptIds = await _lifecycle.GetExemptMainRoomIdsAsync(workspacePath);
+
         foreach (var room in rooms)
         {
             var oldPhase = room.CurrentPhase;
             room.CurrentPhase = newStage;
             room.UpdatedAt = now;
             if (isTerminal)
-                room.Status = completedStatus;
+            {
+                bool isPersistentMain = exemptIds is not null
+                    ? exemptIds.Contains(room.Id)
+                    : RoomLifecycleService.IsMainCollaborationRoomName(room.Name);
+                if (!isPersistentMain)
+                    room.Status = completedStatus;
+            }
 
             QueueEvent(ActivityEventType.PhaseChanged,
                 $"Room '{room.Name}' phase synced to sprint stage: {oldPhase} → {newStage}",

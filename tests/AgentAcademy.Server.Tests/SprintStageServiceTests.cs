@@ -1478,6 +1478,31 @@ public class SprintStageServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AdvanceStage_ToFinalSynthesis_DoesNotFreezeMainCollaborationRoom()
+    {
+        // B1 regression guard: when the sprint hits FinalSynthesis, the
+        // workspace's persistent main collaboration room must stay writable
+        // (Status != Completed). Phase still syncs so filters and UI see
+        // FinalSynthesis. Other rooms in the workspace still freeze.
+        var sprint = await SeedSprintAsync(stage: "Implementation");
+        await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
+        await SeedRoomAsync("main", sprint.WorkspacePath, phase: "Implementation",
+            status: "Active", name: "Main Collaboration Room");
+        await SeedRoomAsync("breakout-y", sprint.WorkspacePath, phase: "Implementation",
+            status: "Active", name: "Breakout Y");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var main = await _db.Rooms.FindAsync("main");
+        var breakout = await _db.Rooms.FindAsync("breakout-y");
+        Assert.Equal("FinalSynthesis", main!.CurrentPhase);
+        Assert.NotEqual("Completed", main.Status);
+        Assert.Equal("FinalSynthesis", breakout!.CurrentPhase);
+        Assert.Equal("Completed", breakout.Status);
+    }
+
+    [Fact]
     public async Task AdvanceStage_SyncsRooms_EmitsPhaseChangedEventWithRoomId()
     {
         var sprint = await SeedSprintAsync(stage: "Discussion");

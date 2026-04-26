@@ -1060,6 +1060,27 @@ public class RoomServiceTests : IDisposable
         Assert.Equal(RoomStatus.Active, snapshot.Status);
     }
 
+    [Fact]
+    public async Task TransitionPhaseAsync_DoesNotFreezeMainCollaborationRoom_OnFinalSynthesis()
+    {
+        // B1 regression guard: even when a human manually advances the main
+        // collaboration room to FinalSynthesis, its Status must stay Active
+        // (the persistent room is never terminal). Phase still updates.
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Rooms.Add(MakeRoom("main-r", "Main Collaboration Room",
+            phase: nameof(CollaborationPhase.Validation)));
+        await db.SaveChangesAsync();
+
+        var snapshot = await svc.TransitionPhaseAsync(
+            "main-r", CollaborationPhase.FinalSynthesis, force: true);
+
+        Assert.Equal(CollaborationPhase.FinalSynthesis, snapshot.CurrentPhase);
+        Assert.Equal(RoomStatus.Active, snapshot.Status);
+    }
+
     // ── GetActiveWorkspacePathAsync ───────────────────────────────
 
     [Fact]
