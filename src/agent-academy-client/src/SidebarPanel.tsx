@@ -200,6 +200,79 @@ const SidebarPanel = memo(function SidebarPanel(props: {
     else if (e.key === "Escape") { setCreatingRoom(false); setNewRoomName(""); }
   }, [handleCreateRoom]);
 
+  /* Group agents by their current room so they can render under each room card.
+     Agents whose location.roomId does not match any room in `rooms` (or who have
+     no location at all) are surfaced in the fallback "Agents" section below.
+     Duplicate locations per agent (e.g., stale + current) are resolved by
+     keeping the most recently updated entry, then used everywhere placement
+     or state needs to be derived. */
+  const roomIds = new Set(props.rooms.map((r) => r.id));
+  const agentLocationById = new Map<string, AgentLocation>();
+  for (const loc of props.agentLocations) {
+    const existing = agentLocationById.get(loc.agentId);
+    if (!existing || existing.updatedAt < loc.updatedAt) {
+      agentLocationById.set(loc.agentId, loc);
+    }
+  }
+  const agentsByRoom = new Map<string, AgentDefinition[]>();
+  const unassignedAgents: AgentDefinition[] = [];
+  for (const agent of props.configuredAgents) {
+    const loc = agentLocationById.get(agent.id);
+    if (loc && roomIds.has(loc.roomId)) {
+      const list = agentsByRoom.get(loc.roomId) ?? [];
+      list.push(agent);
+      agentsByRoom.set(loc.roomId, list);
+    } else {
+      unassignedAgents.push(agent);
+    }
+  }
+
+  const renderAgentButton = (agent: AgentDefinition) => {
+    const loc = agentLocationById.get(agent.id);
+    const state = loc?.state ?? "Idle";
+    const isWorking = state === "Working";
+    const thinking = isAgentThinking(props.thinkingByRoomIds, agent.id);
+    const rc = roleColor(agent.role);
+    const isSelected = props.selectedWorkspaceId === `agent:${agent.id}`;
+
+    return (
+      <button
+        key={agent.id}
+        className={mergeClasses(s.workspaceButton, s.roomButtonHover, isSelected ? s.roomButtonActive : undefined)}
+        onClick={() => props.onSelectWorkspace(`agent:${agent.id}`)}
+        aria-label={`View ${agent.name}'s sessions`}
+        type="button"
+        style={{ position: "relative" }}
+      >
+        <span className={s.roomPhaseDot} style={{ backgroundColor: isWorking ? rc.accent : "var(--aa-soft)" }} />
+        {thinking && (
+          <span style={{
+            position: "absolute", left: "6px", top: "2px", width: "10px", height: "10px",
+            borderRadius: "999px", border: "2px solid transparent",
+            borderTopColor: rc.accent, animation: "aa-spin 0.8s linear infinite",
+          }} />
+        )}
+        <div className={s.workspaceButtonBody}>
+          <div className={s.workspaceButtonTopRow}>
+            <span className={s.workspaceName}>{agent.name}</span>
+            <span
+              className={s.workspaceStateBadge}
+              style={{
+                backgroundColor: isWorking ? `${rc.accent}22` : "rgba(139, 148, 158, 0.08)",
+                color: isWorking ? rc.accent : "var(--aa-soft)",
+              }}
+            >
+              {state.toLowerCase()}
+            </span>
+            {props.contextUsage?.get(agent.id) && (
+              <ContextMeter usage={props.contextUsage.get(agent.id)!} />
+            )}
+          </div>
+        </div>
+      </button>
+    );
+  };
+
   return (
     <aside className={mergeClasses(s.sidebar, !props.sidebarOpen && s.sidebarCollapsed)}>
       {/* Brand */}
@@ -364,76 +437,42 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             <div className={s.roomList}>
               {props.rooms.map((candidate) => {
                 const dotColor = phaseDotColor(candidate.currentPhase);
+                const roomAgents = agentsByRoom.get(candidate.id) ?? [];
                 return (
-                  <button
-                    key={candidate.id}
-                    className={mergeClasses(s.roomButton, s.roomButtonHover, props.room?.id === candidate.id ? s.roomButtonActive : undefined)}
-                    onClick={() => props.onSelectRoom(candidate.id)}
-                    aria-label={`Select room ${candidate.name}`}
-                    type="button"
-                  >
-                    <span className={s.roomPhaseDot} style={{ backgroundColor: dotColor }} />
-                    <span className={s.roomButtonName}>{candidate.name}</span>
-                    <span className={s.roomButtonCount}>{candidate.participants.length}</span>
-                  </button>
+                  <div key={candidate.id}>
+                    <button
+                      className={mergeClasses(s.roomButton, s.roomButtonHover, props.room?.id === candidate.id ? s.roomButtonActive : undefined)}
+                      onClick={() => props.onSelectRoom(candidate.id)}
+                      aria-label={`Select room ${candidate.name}`}
+                      type="button"
+                    >
+                      <span className={s.roomPhaseDot} style={{ backgroundColor: dotColor }} />
+                      <span className={s.roomButtonName}>{candidate.name}</span>
+                      <span className={s.roomButtonCount}>{candidate.participants.length}</span>
+                    </button>
+                    {roomAgents.length > 0 && (
+                      <>
+                        <div className={s.roomAgentListSeparator} role="separator" />
+                        <div className={s.roomAgentList} aria-label={`Agents in ${candidate.name}`}>
+                          {roomAgents.map(renderAgentButton)}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 );
               })}
             </div>
           </section>
 
-          {/* Agents */}
-          {props.configuredAgents.length > 0 && (
+          {/* Agents (unassigned — agents in rooms render under their room above) */}
+          {props.configuredAgents.length > 0 && unassignedAgents.length > 0 && (
             <section className={s.section}>
               <div className={s.sectionHeader}>
                 <div className={s.sectionLabel}>Agents</div>
-                <div className={s.sectionCount}>{props.configuredAgents.length}</div>
+                <div className={s.sectionCount}>{unassignedAgents.length}</div>
               </div>
               <div className={s.roomList}>
-                {props.configuredAgents.map((agent) => {
-                  const loc = props.agentLocations.find((l) => l.agentId === agent.id);
-                  const state = loc?.state ?? "Idle";
-                  const isWorking = state === "Working";
-                  const thinking = isAgentThinking(props.thinkingByRoomIds, agent.id);
-                  const rc = roleColor(agent.role);
-                  const isSelected = props.selectedWorkspaceId === `agent:${agent.id}`;
-
-                  return (
-                    <button
-                      key={agent.id}
-                      className={mergeClasses(s.workspaceButton, s.roomButtonHover, isSelected ? s.roomButtonActive : undefined)}
-                      onClick={() => props.onSelectWorkspace(`agent:${agent.id}`)}
-                      aria-label={`View ${agent.name}'s sessions`}
-                      type="button"
-                      style={{ position: "relative" }}
-                    >
-                      <span className={s.roomPhaseDot} style={{ backgroundColor: isWorking ? rc.accent : "var(--aa-soft)" }} />
-                      {thinking && (
-                        <span style={{
-                          position: "absolute", left: "6px", top: "2px", width: "10px", height: "10px",
-                          borderRadius: "999px", border: "2px solid transparent",
-                          borderTopColor: rc.accent, animation: "aa-spin 0.8s linear infinite",
-                        }} />
-                      )}
-                      <div className={s.workspaceButtonBody}>
-                        <div className={s.workspaceButtonTopRow}>
-                          <span className={s.workspaceName}>{agent.name}</span>
-                          <span
-                            className={s.workspaceStateBadge}
-                            style={{
-                              backgroundColor: isWorking ? `${rc.accent}22` : "rgba(139, 148, 158, 0.08)",
-                              color: isWorking ? rc.accent : "var(--aa-soft)",
-                            }}
-                          >
-                            {state.toLowerCase()}
-                          </span>
-                          {props.contextUsage?.get(agent.id) && (
-                            <ContextMeter usage={props.contextUsage.get(agent.id)!} />
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+                {unassignedAgents.map(renderAgentButton)}
               </div>
             </section>
           )}
