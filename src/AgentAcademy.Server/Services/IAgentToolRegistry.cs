@@ -25,12 +25,22 @@ public interface IAgentToolRegistry
     /// <param name="agentName">
     /// Agent display name, used in task notes and comments.
     /// </param>
+    /// <param name="roomId">
+    /// Room ID, used by write tools (artifact tracking) and the read tools
+    /// when running inside a per-session worktree.
+    /// </param>
+    /// <param name="workspacePath">
+    /// Optional worktree path for the calling session. When supplied, all
+    /// per-session tools (read and write) operate inside this directory
+    /// instead of the develop checkout.
+    /// </param>
     /// <returns>A collection of AI functions to pass to <c>SessionConfig.Tools</c>.</returns>
     IReadOnlyList<AIFunction> GetToolsForAgent(
         IEnumerable<string> enabledTools,
         string? agentId = null,
         string? agentName = null,
-        string? roomId = null);
+        string? roomId = null,
+        string? workspacePath = null);
 
     /// <summary>
     /// Returns all registered tool names for diagnostics.

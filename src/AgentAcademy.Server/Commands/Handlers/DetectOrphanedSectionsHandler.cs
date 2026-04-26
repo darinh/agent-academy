@@ -30,7 +30,7 @@ public sealed class DetectOrphanedSectionsHandler : ICommandHandler
             };
         }
 
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
 
         // Optional: filter to specific section by "id" arg
         string? filterSectionId = null;

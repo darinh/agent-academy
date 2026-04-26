@@ -17,7 +17,7 @@ public sealed class GitLogHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
 
         var count = DefaultCount;
         if (command.Args.TryGetValue("count", out var countObj))

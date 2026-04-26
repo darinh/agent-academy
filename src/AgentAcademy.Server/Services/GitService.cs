@@ -330,6 +330,33 @@ public partial class GitService : IGitService
         finally { _gitLock.Release(); }
     }
 
+    /// <summary>
+    /// Commits already-staged changes in <paramref name="workingDir"/> without running
+    /// <c>git add -A</c> first. The caller (typically a per-worktree tool wrapper) is
+    /// responsible for staging only the paths it intends to commit and validating that
+    /// they fall inside the agent's allowed scope.
+    /// </summary>
+    public async Task<string> CommitStagedInDirAsync(string workingDir, string message, AgentGitIdentity? author = null)
+    {
+        await _gitLock.WaitAsync();
+        try
+        {
+            if (author is not null && !string.IsNullOrWhiteSpace(author.AuthorName) && !string.IsNullOrWhiteSpace(author.AuthorEmail))
+            {
+                var authorArg = $"{author.AuthorName} <{author.AuthorEmail}>";
+                await RunGitInDirInternalAsync(workingDir, "commit", "-m", message, "--author", authorArg);
+            }
+            else
+            {
+                await RunGitInDirInternalAsync(workingDir, "commit", "-m", message);
+            }
+            var sha = await RunGitInDirInternalAsync(workingDir, "rev-parse", "HEAD");
+            _logger.LogInformation("Created scoped commit {Sha} in {Dir} (author: {Author})", sha, workingDir, author?.AuthorName ?? "default");
+            return sha;
+        }
+        finally { _gitLock.Release(); }
+    }
+
     public async Task<string?> GetCurrentBranchInDirAsync(string workingDir)
     {
         await _gitLock.WaitAsync();

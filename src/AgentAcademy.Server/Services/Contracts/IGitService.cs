@@ -78,6 +78,14 @@ public interface IGitService
     /// </summary>
     Task<string> CommitInDirAsync(string workingDir, string message, AgentGitIdentity? author = null);
 
+    /// <summary>
+    /// Commits already-staged changes in <paramref name="workingDir"/> without
+    /// running <c>git add -A</c> first. Used by per-worktree agent tool wrappers
+    /// where the wrapper has already validated and staged its own paths and
+    /// must not pull in unrelated untracked files. Returns the new commit SHA.
+    /// </summary>
+    Task<string> CommitStagedInDirAsync(string workingDir, string message, AgentGitIdentity? author = null);
+
     // ── Stash Operations ────────────────────────────────────────
 
     /// <summary>

@@ -59,7 +59,7 @@ public sealed class CompareSpecToCodeHandler : ICommandHandler
             };
         }
 
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
         var claims = new List<Dictionary<string, object?>>();
 
         // 1. File path claims
