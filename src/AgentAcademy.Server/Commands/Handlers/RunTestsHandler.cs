@@ -21,7 +21,7 @@ public sealed class RunTestsHandler : ICommandHandler
 
         try
         {
-            var projectRoot = FindProjectRoot();
+            var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
 
             // Parse optional scope
             var scope = "all";

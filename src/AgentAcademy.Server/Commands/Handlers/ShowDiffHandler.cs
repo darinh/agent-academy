@@ -14,7 +14,7 @@ public sealed class ShowDiffHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
 
         // Build argument list directly (not an Arguments string) to avoid
         // shell-quoting issues with UseShellExecute = false

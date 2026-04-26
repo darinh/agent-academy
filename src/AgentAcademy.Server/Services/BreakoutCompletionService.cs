@@ -142,7 +142,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
         {
             var verdict = await RunReviewCycleAsync(
                 breakoutRoomService, messageService, roomService,
-                activity, configService, parentRoomId, agent, lastMessage?.Content ?? "");
+                activity, configService, parentRoomId, agent, lastMessage?.Content ?? "", worktreePath);
 
             var isApproved = verdict is null ||
                 Regex.IsMatch(verdict.Verdict, @"^\s*APPROVED", RegexOptions.IgnoreCase);
@@ -165,7 +165,8 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
         IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         IRoomService roomService,
         IActivityPublisher activity, IAgentConfigService configService,
-        string parentRoomId, AgentDefinition presentingAgent, string workReport)
+        string parentRoomId, AgentDefinition presentingAgent, string workReport,
+        string? worktreePath = null)
     {
         var catalogReviewer = FindReviewer();
         if (catalogReviewer is null) return null;
@@ -180,7 +181,10 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
             var reviewVersionInfo = await _specManager.GetSpecVersionAsync();
             var prompt = PromptBuilder.BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
                 await _specManager.LoadSpecContextAsync(), reviewVersionInfo?.Version);
-            reviewResponse = await RunAgentAsync(reviewer, prompt, parentRoomId);
+            // Reviewer reads the worktree's view of the change, so pass worktreePath
+            // through. Without it the reviewer reads develop and may miss the agent's
+            // uncommitted-but-staged file edits in the worktree.
+            reviewResponse = await RunAgentAsync(reviewer, prompt, parentRoomId, worktreePath);
         }
         catch (Exception ex)
         {
@@ -277,7 +281,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
                 var fixVersionInfo = await _specManager.GetSpecVersionAsync();
                 response = await RunAgentAsync(
                     agent, PromptBuilder.BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary, fixSpecContext, fixVersionInfo?.Version),
-                    breakoutRoomId);
+                    breakoutRoomId, worktreePath);
             }
             catch { continue; }
 

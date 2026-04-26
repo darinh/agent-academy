@@ -17,8 +17,10 @@ public interface IAgentToolFunctions
 
     /// <summary>
     /// Creates all AIFunction instances for the "code" tool group.
+    /// When <paramref name="workspacePath"/> is provided the read tools resolve
+    /// paths and run searches inside that worktree.
     /// </summary>
-    IReadOnlyList<AIFunction> CreateCodeTools();
+    IReadOnlyList<AIFunction> CreateCodeTools(string? workspacePath = null);
 
     /// <summary>
     /// Creates AIFunction instances for the "task-write" tool group.
@@ -34,13 +36,16 @@ public interface IAgentToolFunctions
 
     /// <summary>
     /// Creates AIFunction instances for the "code-write" tool group.
+    /// When <paramref name="workspacePath"/> is provided the wrapper writes and
+    /// commits inside that worktree instead of the develop checkout.
     /// </summary>
-    IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null);
+    IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null, string? workspacePath = null);
 
     /// <summary>
     /// Creates AIFunction instances for the "spec-write" tool group.
     /// Writes are restricted to the <c>specs/</c> directory. Typically granted
-    /// to the Technical Writer (Thucydides).
+    /// to the Technical Writer (Thucydides). When <paramref name="workspacePath"/>
+    /// is provided the wrapper writes and commits inside that worktree.
     /// </summary>
-    IReadOnlyList<AIFunction> CreateSpecWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null);
+    IReadOnlyList<AIFunction> CreateSpecWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null, string? workspacePath = null);
 }

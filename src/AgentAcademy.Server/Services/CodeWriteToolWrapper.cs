@@ -41,6 +41,14 @@ internal sealed class CodeWriteToolWrapper
     private readonly IReadOnlyList<string> _protectedPaths;
 
     /// <summary>
+    /// When set, all path resolution and git operations target this directory
+    /// instead of <see cref="AgentToolFunctions.FindProjectRoot"/>. Set per-session
+    /// for breakouts that own a worktree; null for main-room agents that operate
+    /// against the develop checkout. Stored as a canonical resolved path.
+    /// </summary>
+    private readonly string? _scopeRoot;
+
+    /// <summary>
     /// The first configured root. Retained for call-sites (and tests) that treat the wrapper
     /// as having a single root. For multi-root configurations prefer <see cref="AllowedRoots"/>.
     /// Always stored without a trailing separator.
@@ -58,17 +66,19 @@ internal sealed class CodeWriteToolWrapper
 
     internal CodeWriteToolWrapper(
         IServiceScopeFactory scopeFactory, ILogger logger,
-        string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
-        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId, new[] { "src" }, CodeWriteProtectedPaths)
+        string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null,
+        string? scopeRoot = null)
+        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId, new[] { "src" }, CodeWriteProtectedPaths, scopeRoot)
     {
     }
 
     internal CodeWriteToolWrapper(
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity, string? roomId,
-        string allowedRoot, IReadOnlyList<string> protectedPaths)
+        string allowedRoot, IReadOnlyList<string> protectedPaths,
+        string? scopeRoot = null)
         : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId,
-               ValidateSingleRoot(allowedRoot), protectedPaths)
+               ValidateSingleRoot(allowedRoot), protectedPaths, scopeRoot)
     {
     }
 
@@ -87,7 +97,8 @@ internal sealed class CodeWriteToolWrapper
     internal CodeWriteToolWrapper(
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity, string? roomId,
-        IReadOnlyList<string> allowedRoots, IReadOnlyList<string> protectedPaths)
+        IReadOnlyList<string> allowedRoots, IReadOnlyList<string> protectedPaths,
+        string? scopeRoot = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -113,7 +124,14 @@ internal sealed class CodeWriteToolWrapper
 
         _allowedRoots = normalized;
         _protectedPaths = protectedPaths ?? Array.Empty<string>();
+        _scopeRoot = ScopeRootValidator.ValidateAndCanonicalize(scopeRoot, nameof(scopeRoot));
     }
+
+    /// <summary>
+    /// Returns the active scope root: the explicit per-session scope when set,
+    /// otherwise the develop checkout discovered by <see cref="AgentToolFunctions.FindProjectRoot"/>.
+    /// </summary>
+    private string ResolveScopeRoot() => _scopeRoot ?? AgentToolFunctions.FindProjectRoot();
 
     /// <summary>
     /// Human-readable list of the configured roots with trailing slashes
@@ -145,8 +163,8 @@ internal sealed class CodeWriteToolWrapper
         [Description("The full content to write to the file")]
         string content)
     {
-        _logger.LogInformation("Tool call: write_file by {AgentId} (path={Path}, length={Length}, allowedRoots={Roots})",
-            _agentId, path, content?.Length ?? 0, FormatRootsForDisplay());
+        _logger.LogInformation("Tool call: write_file by {AgentId} (cwd={ScopeRoot}, path={Path}, length={Length}, allowedRoots={Roots})",
+            _agentId, ResolveScopeRoot(), path, content?.Length ?? 0, FormatRootsForDisplay());
 
         if (string.IsNullOrWhiteSpace(path))
             return "Error: path is required.";
@@ -159,7 +177,7 @@ internal sealed class CodeWriteToolWrapper
         if (content.Contains('\0'))
             return "Error: Binary content detected (null bytes). Only text files are supported.";
 
-        var projectRoot = AgentToolFunctions.FindProjectRoot();
+        var projectRoot = ResolveScopeRoot();
         var fullPath = Path.GetFullPath(Path.Combine(projectRoot, path));
 
         // Security: path must be within the project directory
@@ -278,8 +296,8 @@ internal sealed class CodeWriteToolWrapper
                      "Use prefixes: feat:, fix:, refactor:, test:, docs:")]
         string message)
     {
-        _logger.LogInformation("Tool call: commit_changes by {AgentId} (message={Message})",
-            _agentId, message);
+        _logger.LogInformation("Tool call: commit_changes by {AgentId} (cwd={ScopeRoot}, message={Message})",
+            _agentId, ResolveScopeRoot(), message);
 
         if (string.IsNullOrWhiteSpace(message))
             return "Error: message is required. Provide a conventional commit message (e.g., 'feat: add ITimeProvider abstraction').";
@@ -287,11 +305,20 @@ internal sealed class CodeWriteToolWrapper
         if (message.Length > 5000)
             return "Error: Commit message exceeds 5000 characters.";
 
-        var projectRoot = AgentToolFunctions.FindProjectRoot();
+        var projectRoot = ResolveScopeRoot();
 
         // Scope enforcement: refuse to commit if any staged path is outside _allowedRoot
         // or matches a protected infrastructure file. This prevents an agent holding
         // (e.g.) spec-write from committing src/ files that another flow happened to stage.
+        //
+        // Known TOCTOU caveat (P1.9 blocker B review, codex finding): validation happens
+        // BEFORE the commit, and another caller could in principle stage a path between
+        // validation and commit that then gets included in the commit. In practice, each
+        // breakout has exactly one agent assigned to one worktree, so two CodeWriteToolWrapper
+        // instances do not share a worktree's index. The race is theoretical, not exploitable
+        // by the per-breakout design — but a future refactor that introduces shared-worktree
+        // multi-agent commits should switch to explicit pathspec commits (`git commit -- path1
+        // path2`) to close the window.
         var scopeViolation = await ValidateStagedPathsAsync(projectRoot);
         if (scopeViolation is not null)
         {
@@ -306,11 +333,17 @@ internal sealed class CodeWriteToolWrapper
             using var scope = _scopeFactory.CreateScope();
             var gitService = scope.ServiceProvider.GetRequiredService<IGitService>();
 
-            var commitSha = await gitService.CommitAsync(message, _gitIdentity);
+            // When operating inside a per-session worktree, run the commit in that
+            // worktree directly via the scoped commit path (no `git add -A`, since
+            // the wrapper has already staged its own paths). Main-room agents
+            // (no scope root) keep the legacy GitService.CommitAsync path.
+            var commitSha = _scopeRoot is not null
+                ? await gitService.CommitStagedInDirAsync(_scopeRoot, message, _gitIdentity)
+                : await gitService.CommitAsync(message, _gitIdentity);
 
             _logger.LogInformation(
-                "commit_changes by {AgentId} ({AgentName}): {CommitSha} — {Message}",
-                _agentId, _agentName, commitSha, message);
+                "commit_changes by {AgentId} ({AgentName}): {CommitSha} (cwd={ScopeRoot}) — {Message}",
+                _agentId, _agentName, commitSha, projectRoot, message);
 
             await RecordCommitArtifactAsync(scope, commitSha.Trim());
 
@@ -354,7 +387,7 @@ internal sealed class CodeWriteToolWrapper
         {
             var gitService = scope.ServiceProvider.GetRequiredService<IGitService>();
             var tracker = scope.ServiceProvider.GetRequiredService<IRoomArtifactTracker>();
-            var files = await gitService.GetFilesInCommitAsync(commitSha);
+            var files = await gitService.GetFilesInCommitAsync(commitSha, _scopeRoot);
             await tracker.RecordCommitAsync(_roomId, _agentId, commitSha, files);
         }
         catch (Exception ex)

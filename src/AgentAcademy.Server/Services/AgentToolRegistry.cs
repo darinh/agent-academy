@@ -29,9 +29,12 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
     private readonly IReadOnlyList<string> _allToolNames;
     private readonly ILogger<AgentToolRegistry> _logger;
 
-    // Groups that require agent context (created per-agent session)
+    // Groups that require agent context (created per-agent session) — these
+    // include "code" because read tools resolve paths against the calling
+    // session's worktree (when one is assigned), and a single static instance
+    // cannot carry per-session scope.
     private static readonly HashSet<string> ContextualGroups =
-        new(StringComparer.OrdinalIgnoreCase) { "task-write", "memory", "code-write", "spec-write" };
+        new(StringComparer.OrdinalIgnoreCase) { "task-write", "memory", "code-write", "spec-write", "code" };
 
     public AgentToolRegistry(
         IAgentToolFunctions toolFunctions,
@@ -43,20 +46,22 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         _logger = logger;
 
         var taskStateTools = toolFunctions.CreateTaskStateTools();
-        var codeTools = toolFunctions.CreateCodeTools();
 
         _staticGroups = new Dictionary<string, IReadOnlyList<AIFunction>>(StringComparer.OrdinalIgnoreCase)
         {
             ["task-state"] = taskStateTools,
-            ["code"] = codeTools,
         };
 
-        // Build the complete list including contextual tool names for diagnostics
+        // Build the complete list including contextual tool names for diagnostics.
+        // "read_file" and "search_code" are now contextual (built per session with
+        // an optional workspacePath) so they must appear here for _allToolNames
+        // diagnostics to remain accurate.
         var contextualNames = new List<string>
         {
             "create_task", "update_task_status", "add_task_comment",
             "remember", "recall",
-            "write_file", "commit_changes"
+            "write_file", "commit_changes",
+            "read_file", "search_code"
         };
 
         _allToolNames = _staticGroups.Values
@@ -78,7 +83,8 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         IEnumerable<string> enabledTools,
         string? agentId = null,
         string? agentName = null,
-        string? roomId = null)
+        string? roomId = null,
+        string? workspacePath = null)
     {
         var tools = new List<AIFunction>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -96,10 +102,13 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
                 continue;
             }
 
-            // Contextual (write) groups — require agent identity
+            // Contextual groups — write groups require agentId; the read "code"
+            // group does not, but does benefit from the per-session workspacePath
+            // when one is provided.
             if (ContextualGroups.Contains(group))
             {
-                if (string.IsNullOrEmpty(agentId))
+                var isCodeReadGroup = string.Equals(group, "code", StringComparison.OrdinalIgnoreCase);
+                if (!isCodeReadGroup && string.IsNullOrEmpty(agentId))
                 {
                     _logger.LogWarning(
                         "Contextual tool group '{Group}' requested but no agentId provided — skipping",
@@ -107,7 +116,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
                     continue;
                 }
 
-                var contextualTools = CreateContextualTools(group, agentId, agentName ?? agentId, roomId);
+                var contextualTools = CreateContextualTools(group, agentId ?? string.Empty, agentName ?? agentId ?? string.Empty, roomId, workspacePath);
                 foreach (var tool in contextualTools)
                 {
                     if (seen.Add(tool.Name))
@@ -119,9 +128,10 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         if (tools.Count > 0)
         {
             _logger.LogDebug(
-                "Resolved {Count} tools for agent {AgentId}, groups [{Groups}]: {Names}",
+                "Resolved {Count} tools for agent {AgentId} (cwd={WorkspacePath}), groups [{Groups}]: {Names}",
                 tools.Count,
                 agentId ?? "(none)",
+                workspacePath ?? "(default)",
                 string.Join(", ", enabledTools),
                 string.Join(", ", tools.Select(t => t.Name)));
         }
@@ -132,16 +142,17 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
     public IReadOnlyList<string> GetAllToolNames() => _allToolNames;
 
     private IReadOnlyList<AIFunction> CreateContextualTools(
-        string group, string agentId, string agentName, string? roomId)
+        string group, string agentId, string agentName, string? roomId, string? workspacePath)
     {
         return group.ToLowerInvariant() switch
         {
             "task-write" => _toolFunctions.CreateTaskWriteTools(agentId, agentName),
             "memory" => _toolFunctions.CreateMemoryTools(agentId),
+            "code" => _toolFunctions.CreateCodeTools(workspacePath),
             "code-write" => _toolFunctions.CreateCodeWriteTools(agentId, agentName,
-                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity, roomId),
+                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity, roomId, workspacePath),
             "spec-write" => _toolFunctions.CreateSpecWriteTools(agentId, agentName,
-                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity, roomId),
+                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity, roomId, workspacePath),
             _ => []
         };
     }

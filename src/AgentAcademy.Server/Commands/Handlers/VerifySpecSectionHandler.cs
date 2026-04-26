@@ -60,7 +60,7 @@ public sealed class VerifySpecSectionHandler : ICommandHandler
             };
         }
 
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
         var extractedPaths = SpecReferenceExtractor.ExtractFilePaths(content);
         var validations = SpecReferenceExtractor.ValidatePaths(extractedPaths, projectRoot);
 

@@ -227,4 +227,47 @@ public sealed class ReadFileHandlerTests : IDisposable
             Directory.SetCurrentDirectory(oldDir);
         }
     }
+
+    [Fact]
+    public async Task ReadFile_HonoursContextWorkingDirectory_NotCwd()
+    {
+        // P1.9 blocker B regression: when the breakout passes a worktree path
+        // through CommandContext.WorkingDirectory, the handler must read from
+        // *that* directory, not from FindProjectRoot() walking up from cwd.
+        var altRoot = Path.Combine(Path.GetTempPath(), $"alt-root-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(altRoot);
+        try
+        {
+            File.WriteAllText(Path.Combine(altRoot, "scoped.txt"), "from alt root");
+            // Also drop a file with the same name in the cwd so we can detect
+            // a regression that reads from the wrong tree.
+            File.WriteAllText(Path.Combine(_tempDir, "scoped.txt"), "from cwd");
+
+            var oldDir = Directory.GetCurrentDirectory();
+            Directory.SetCurrentDirectory(_tempDir);
+            try
+            {
+                var ctx = new CommandContext(
+                    AgentId: "test-agent",
+                    AgentName: "Tester",
+                    AgentRole: "SoftwareEngineer",
+                    RoomId: "main",
+                    BreakoutRoomId: null,
+                    Services: null!,
+                    WorkingDirectory: altRoot);
+
+                var result = await _handler.ExecuteAsync(
+                    MakeCommand(new() { ["path"] = "scoped.txt" }), ctx);
+
+                Assert.Equal(CommandStatus.Success, result.Status);
+                var content = (string)((Dictionary<string, object?>)result.Result!)["content"]!;
+                Assert.Equal("from alt root", content);
+            }
+            finally { Directory.SetCurrentDirectory(oldDir); }
+        }
+        finally
+        {
+            try { Directory.Delete(altRoot, true); } catch { }
+        }
+    }
 }

@@ -30,7 +30,7 @@ public sealed class SearchSpecHandler : ICommandHandler
             query = val;
         }
 
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
         var specsDir = Path.Combine(projectRoot, "specs");
 
         if (!Directory.Exists(specsDir))

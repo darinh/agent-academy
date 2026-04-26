@@ -20,7 +20,7 @@ public sealed class RunTypecheckHandler : ICommandHandler
 
         try
         {
-            var clientDir = RunFrontendBuildHandler.FindClientDir();
+            var clientDir = RunFrontendBuildHandler.FindClientDirInRoot(context.WorkingDirectory);
 
             var psi = new ProcessStartInfo
             {

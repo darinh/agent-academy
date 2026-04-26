@@ -20,7 +20,7 @@ public sealed class RunBuildHandler : ICommandHandler
 
         try
         {
-            var projectRoot = FindProjectRoot();
+            var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
 
             var psi = new ProcessStartInfo
             {

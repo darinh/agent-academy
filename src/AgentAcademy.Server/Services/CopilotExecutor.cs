@@ -214,7 +214,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         {
             var response = await _sessionPool.UseAsync(
                 sessionKey,
-                ct => CreatePrimedSessionAsync(client, agent, roomId, ct),
+                ct => CreatePrimedSessionAsync(client, agent, roomId, workspacePath, ct),
                 session => _sender.SendWithRetryAsync(session, agent, prompt, roomId, ct, turnId),
                 ct);
 
@@ -342,13 +342,14 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         CopilotClient client,
         AgentDefinition agent,
         string? roomId,
+        string? workspacePath,
         CancellationToken ct)
     {
         _logger.LogDebug(
-            "Creating new CopilotSession for agent {AgentId}, model={Model}",
-            agent.Id, agent.Model ?? "default");
+            "Creating new CopilotSession for agent {AgentId}, model={Model}, cwd={WorkspacePath}",
+            agent.Id, agent.Model ?? "default", workspacePath ?? "(default)");
 
-        var tools = _toolRegistry.GetToolsForAgent(agent.EnabledTools, agent.Id, agent.Name, roomId);
+        var tools = _toolRegistry.GetToolsForAgent(agent.EnabledTools, agent.Id, agent.Name, roomId, workspacePath);
         var toolNames = new HashSet<string>(tools.Select(t => t.Name), StringComparer.Ordinal);
 
         var config = new SessionConfig

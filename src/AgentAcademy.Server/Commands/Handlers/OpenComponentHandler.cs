@@ -33,7 +33,7 @@ public sealed class OpenComponentHandler : ICommandHandler
         }
 
         name = name.Trim();
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
 
         // Use git ls-files to find tracked files in src/ matching the name
         var psi = new ProcessStartInfo

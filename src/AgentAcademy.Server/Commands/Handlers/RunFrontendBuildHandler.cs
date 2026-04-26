@@ -21,7 +21,7 @@ public sealed class RunFrontendBuildHandler : ICommandHandler
 
         try
         {
-            var clientDir = FindClientDir();
+            var clientDir = FindClientDirInRoot(context.WorkingDirectory);
 
             var psi = new ProcessStartInfo
             {
@@ -97,4 +97,15 @@ public sealed class RunFrontendBuildHandler : ICommandHandler
         }
         return Path.Combine(Directory.GetCurrentDirectory(), "src", "agent-academy-client");
     }
+
+    /// <summary>
+    /// Returns the client directory rooted at <paramref name="projectRoot"/> when
+    /// supplied — used by per-worktree breakouts so the frontend build runs
+    /// against the worktree's checkout, not develop. Falls back to the cwd-walking
+    /// helper for main-room callers (no scope).
+    /// </summary>
+    internal static string FindClientDirInRoot(string? projectRoot)
+        => projectRoot is null
+            ? FindClientDir()
+            : Path.Combine(projectRoot, "src", "agent-academy-client");
 }
