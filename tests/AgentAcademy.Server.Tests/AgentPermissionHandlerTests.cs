@@ -188,41 +188,142 @@ public sealed class AgentPermissionHandlerTests
         Assert.Equal(PermissionRequestResultKind.Approved, result.Kind);
     }
 
-    // ── Denial log escalation (per-closure) ─────────────────────
+    // ── Hook kind (always-safe — SDK lifecycle event) ────────────
+    //
+    // Per inspection of GitHub.Copilot.SDK 0.2.2, "hook" is fired during
+    // session priming (before any user-initiated tool runs). Denying it
+    // surfaces as "unexpected user permission response" on the first turn
+    // and was the root cause of P1.9-blocker-A (supervised acceptance run
+    // 2026-04-26). Must be approved unconditionally — no tool registration
+    // implies it; it's pure SDK lifecycle.
+
+    [Theory]
+    [InlineData("hook")]
+    [InlineData("HOOK")]
+    [InlineData("Hook")]
+    public async Task Create_HookKind_AlwaysApproved(string kind)
+    {
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "some-tool" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
+
+        var result = await handler(MakeRequest(kind), MakeInvocation());
+
+        Assert.Equal(PermissionRequestResultKind.Approved, result.Kind);
+    }
 
     [Fact]
-    public async Task Create_DenialLogging_FirstThreeAtWarning()
+    public async Task Create_HookKind_ApprovedEvenWithNoToolsRegistered()
+    {
+        // No-tools branch already approves everything, but this asserts the
+        // explicit AlwaysSafeKinds path also handles it (defence in depth
+        // against a future refactor that drops the no-tools shortcut).
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "any-tool" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
+
+        var result = await handler(MakeRequest("hook"), MakeInvocation());
+
+        Assert.Equal(PermissionRequestResultKind.Approved, result.Kind);
+    }
+
+    // ── Other unhandled SDK kinds (mcp, memory) — explicitly denied ──
+    //
+    // These exist in GitHub.Copilot.SDK 0.2.2 but no current tool implies
+    // them. Pinning the deny behaviour here so a future SDK update or
+    // accidental dictionary edit doesn't silently grant them.
+
+    [Theory]
+    [InlineData("mcp")]
+    [InlineData("memory")]
+    public async Task Create_UnimpliedSdkKind_Denied(string kind)
+    {
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "some-tool" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
+
+        var result = await handler(
+            MakeRequest(kind),
+            MakeInvocation($"unimplied-{kind}-{Guid.NewGuid():N}"));
+
+        Assert.Equal(PermissionRequestResultKind.DeniedByRules, result.Kind);
+    }
+
+    // ── Denial log dedup-by-Kind (replaces old count-based escalation) ──
+
+    [Fact]
+    public async Task Create_DenialLogging_FirstDenialOfKindAtWarning()
     {
         var mockLogger = Substitute.For<ILogger>();
+        mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var handler = AgentPermissionHandler.Create(
             new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
 
-        // Fire 3 denials
-        for (var i = 0; i < 3; i++)
+        await handler(MakeRequest("shell"), MakeInvocation());
+
+        mockLogger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Fact]
+    public async Task Create_DenialLogging_RepeatedKindGoesToDebug()
+    {
+        var mockLogger = Substitute.For<ILogger>();
+        mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
+
+        // 5 denials of the same kind: 1 Warning (first), 4 Debug (repeats).
+        for (var i = 0; i < 5; i++)
             await handler(MakeRequest("shell"), MakeInvocation());
 
+        mockLogger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+
+        mockLogger.Received(4).Log(
+            LogLevel.Debug,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Fact]
+    public async Task Create_DenialLogging_EachDistinctKindLoggedAtWarningOnce()
+    {
+        // Regression guard for P1.9-blocker-A: a future SDK kind appearing
+        // for the first time must be visible at default log level, even if
+        // many denials of an already-known kind have already occurred this
+        // session. Without dedup-by-Kind, the prior count-based suppression
+        // would hide the novel kind at Debug.
+        var mockLogger = Substitute.For<ILogger>();
+        mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var handler = AgentPermissionHandler.Create(
+            new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
+
+        // 10 denials of "shell" first (would have exhausted the old
+        // count-based suppression), then one "url" and one "memory".
+        for (var i = 0; i < 10; i++)
+            await handler(MakeRequest("shell"), MakeInvocation());
+        await handler(MakeRequest("url"), MakeInvocation());
+        await handler(MakeRequest("memory"), MakeInvocation());
+
+        // Three distinct kinds → exactly three Warning logs.
         mockLogger.Received(3).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
             Arg.Any<object>(),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
-    }
 
-    [Fact]
-    public async Task Create_DenialLogging_FourthAtWarningWithSuppression()
-    {
-        var mockLogger = Substitute.For<ILogger>();
-        mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
-
-        for (var i = 0; i < 4; i++)
-            await handler(MakeRequest("shell"), MakeInvocation());
-
-        // 4 Warning calls total (3 regular + 1 suppression notice).
-        mockLogger.Received(4).Log(
-            LogLevel.Warning,
+        // Nine repeats of "shell" at Debug.
+        mockLogger.Received(9).Log(
+            LogLevel.Debug,
             Arg.Any<EventId>(),
             Arg.Any<object>(),
             Arg.Any<Exception?>(),
@@ -230,18 +331,22 @@ public sealed class AgentPermissionHandlerTests
     }
 
     [Fact]
-    public async Task Create_DenialLogging_FifthAndBeyondAtDebug()
+    public async Task Create_DenialLogging_KindDedupIsCaseInsensitive()
     {
+        // PermissionRequest.Kind is matched case-insensitively elsewhere;
+        // the dedup set must follow the same rule, otherwise an SDK that
+        // sends "Shell" once and "shell" once would log two Warnings for
+        // the same logical kind.
         var mockLogger = Substitute.For<ILogger>();
         mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var handler = AgentPermissionHandler.Create(
             new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
 
-        for (var i = 0; i < 6; i++)
-            await handler(MakeRequest("shell"), MakeInvocation());
+        await handler(MakeRequest("shell"), MakeInvocation());
+        await handler(MakeRequest("SHELL"), MakeInvocation());
+        await handler(MakeRequest("Shell"), MakeInvocation());
 
-        // 4 Warning (first 3 + suppression at 4th), 2 Debug (5th + 6th).
-        mockLogger.Received(4).Log(
+        mockLogger.Received(1).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
             Arg.Any<object>(),
@@ -261,9 +366,10 @@ public sealed class AgentPermissionHandlerTests
     [Fact]
     public async Task Create_DenialCount_IsPerHandlerInstance()
     {
-        // Each Create() call returns a handler with its own denial counter,
-        // scoped to that session and GC'd with it. Two handlers do not share
-        // state, even when invoked with the same sessionId.
+        // Each Create() call returns a handler with its own denial state
+        // (count + per-Kind dedup set), scoped to that session and GC'd
+        // with it. Two handlers do not share state, even when invoked with
+        // the same sessionId.
         var loggerA = Substitute.For<ILogger>();
         loggerA.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var loggerB = Substitute.For<ILogger>();
@@ -274,19 +380,26 @@ public sealed class AgentPermissionHandlerTests
         var handlerB = AgentPermissionHandler.Create(
             new HashSet<string> { "some-tool" }, loggerB, new TestDoubles.NoOpAgentLivenessTracker());
 
-        // Fire 4 denials on handler A — should see 4 Warning logs
-        // (3 escalating + 1 suppression notice).
+        // Fire 4 denials of "shell" on handler A — under per-Kind dedup,
+        // exactly 1 Warning (first denial of "shell") + 3 Debug (repeats).
         for (var i = 0; i < 4; i++)
             await handlerA(MakeRequest("shell"), MakeInvocation("shared-session"));
 
-        loggerA.Received(4).Log(
+        loggerA.Received(1).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
             Arg.Any<object>(),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
+        loggerA.Received(3).Log(
+            LogLevel.Debug,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
 
-        // Handler B has a fresh counter — first denial logs at Warning #1.
+        // Handler B has a fresh dedup set — first "shell" denial logs at
+        // Warning #1 even though handler A has already seen it.
         await handlerB(MakeRequest("shell"), MakeInvocation("shared-session"));
 
         loggerB.Received(1).Log(
