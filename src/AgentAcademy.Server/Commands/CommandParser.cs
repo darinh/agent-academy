@@ -72,6 +72,68 @@ public sealed class CommandParser
     /// Parse agent text for structured commands.
     /// Returns extracted commands and the remaining text with commands stripped.
     /// </summary>
+    // Optional surrounding markdown emphasis (up to 3 of *, `, _, ~) on the
+    // command keyword. Agents frequently emit `**STORE_ARTIFACT:**` or
+    // `` `LIST_ROOMS:` `` instead of the bare form taught in prompts; we
+    // tolerate that drift so commands aren't silently dropped.
+    private const string EmphasisChars = @"[`*_~]{0,3}";
+
+    // Matches a command keyword line, tolerating optional emphasis around
+    // the keyword itself (NOT around the trailing value — see
+    // TryUnwrapPairedEmphasis for whole-line wrappers like `**X: y**`).
+    private static readonly Regex CommandLinePattern = new(
+        $@"^\s*{EmphasisChars}([A-Z][A-Z0-9_]+(?:\s[A-Z]+)*){EmphasisChars}:\s*(.*)$",
+        RegexOptions.Compiled);
+
+    // Anchored at column 0 — indented uppercase tokens (e.g. `  TYPE:` arg
+    // keys) must NOT be treated as next-command boundaries.
+    private static readonly Regex NextCommandLookahead = new(
+        $@"^{EmphasisChars}[A-Z][A-Z0-9_]+(?:\s[A-Z]+)*{EmphasisChars}:",
+        RegexOptions.Compiled);
+
+    private static readonly char[] EmphasisCharSet = { '*', '`', '_', '~' };
+
+    /// <summary>
+    /// If the entire line is wrapped in matching markdown emphasis
+    /// (e.g. `**STORE_ARTIFACT: Type=X**`), peel one layer.
+    /// Refuses to peel when the inner content already contains an
+    /// occurrence of the wrapper, which would indicate the trailing
+    /// emphasis is a separate token (e.g. `**X:** value**`) — leave that
+    /// alone so the trailing emphasis survives in the value.
+    /// </summary>
+    private static string TryUnwrapPairedEmphasis(string line)
+    {
+        var trimmed = line.TrimEnd();
+        var leadingWs = trimmed.Length - trimmed.TrimStart().Length;
+        var indent = trimmed.Substring(0, leadingWs);
+        var content = trimmed.Substring(leadingWs);
+        if (content.Length < 2) return line;
+
+        var c = content[0];
+        if (Array.IndexOf(EmphasisCharSet, c) < 0) return line;
+
+        var leadCount = 1;
+        while (leadCount < content.Length && leadCount < 3 && content[leadCount] == c)
+            leadCount++;
+
+        var trailCount = 0;
+        while (trailCount < content.Length - leadCount && trailCount < 3
+               && content[content.Length - 1 - trailCount] == c)
+            trailCount++;
+
+        if (trailCount == 0) return line;
+
+        var wrapLen = Math.Min(leadCount, trailCount);
+        var wrapper = new string(c, wrapLen);
+        var inner = content.Substring(wrapLen, content.Length - 2 * wrapLen);
+
+        // Refuse to peel if inner already contains the wrapper — that means
+        // the trailing emphasis belongs to the value, not the wrapping pair.
+        if (inner.Contains(wrapper)) return line;
+
+        return indent + inner;
+    }
+
     public CommandParseResult Parse(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -85,7 +147,8 @@ public sealed class CommandParser
         while (i < lines.Length)
         {
             var line = lines[i];
-            var match = Regex.Match(line, @"^([A-Z][A-Z0-9_]+(?:\s[A-Z]+)*):\s*(.*)$");
+            var unwrapped = TryUnwrapPairedEmphasis(line);
+            var match = CommandLinePattern.Match(unwrapped);
 
             if (match.Success)
             {
@@ -117,7 +180,7 @@ public sealed class CommandParser
 
                     // Next command or empty line = end of this command's args
                     if (string.IsNullOrWhiteSpace(argLine) ||
-                        Regex.IsMatch(argLine, @"^[A-Z][A-Z0-9_]+(?:\s[A-Z]+)*:"))
+                        NextCommandLookahead.IsMatch(TryUnwrapPairedEmphasis(argLine)))
                         break;
 
                     // Indented arg line

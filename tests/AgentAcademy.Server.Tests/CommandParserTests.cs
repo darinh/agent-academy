@@ -519,4 +519,188 @@ public class CommandParserTests
         Assert.Single(result.Commands);
         Assert.Equal("some search query here", result.Commands[0].Args["value"]);
     }
+
+    // ── Markdown emphasis tolerance ─────────────────────────────
+    // Agents frequently emit commands wrapped in markdown (`**STORE_ARTIFACT:**`,
+    // `` `LIST_ROOMS:` ``) instead of the bare form taught in prompts. The parser
+    // must strip leading/trailing emphasis so commands aren't silently dropped.
+
+    [Theory]
+    [InlineData("**LIST_ROOMS:**")]
+    [InlineData("*LIST_ROOMS:*")]
+    [InlineData("`LIST_ROOMS:`")]
+    [InlineData("__LIST_ROOMS:__")]
+    [InlineData("_LIST_ROOMS:_")]
+    [InlineData("~~LIST_ROOMS:~~")]
+    [InlineData("**LIST_ROOMS**:")]
+    [InlineData("`LIST_ROOMS`:")]
+    public void Parse_CommandWithSurroundingMarkdownEmphasis_Recognized(string text)
+    {
+        var result = _parser.Parse(text);
+        Assert.Single(result.Commands);
+        Assert.Equal("LIST_ROOMS", result.Commands[0].Command);
+    }
+
+    [Fact]
+    public void Parse_BoldCommandWithInlineArgs_ExtractsArgs()
+    {
+        var text = "**STORE_ARTIFACT:** Type=RequirementsDocument Content=hello";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("STORE_ARTIFACT", result.Commands[0].Command);
+        Assert.Equal("RequirementsDocument", result.Commands[0].Args["Type"]);
+        Assert.Equal("hello", result.Commands[0].Args["Content"]);
+    }
+
+    [Fact]
+    public void Parse_BoldCommandWithIndentedMultiLineArgs_ExtractsArgs()
+    {
+        var text = "**STORE_ARTIFACT:**\n  Type: RequirementsDocument\n  Content: full doc body";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("STORE_ARTIFACT", result.Commands[0].Command);
+        Assert.Equal("RequirementsDocument", result.Commands[0].Args["Type"]);
+        Assert.Equal("full doc body", result.Commands[0].Args["Content"]);
+    }
+
+    [Fact]
+    public void Parse_BoldNextCommand_TerminatesPriorCommandArgs()
+    {
+        // Lookahead must also tolerate emphasis so a `**ADVANCE_STAGE:**`
+        // properly terminates the prior command's arg block instead of being
+        // swallowed as a continuation line.
+        var text = "STORE_ARTIFACT:\n  Type: x\n  Content: y\n**ADVANCE_STAGE:**";
+        var result = _parser.Parse(text);
+
+        Assert.Equal(2, result.Commands.Count);
+        Assert.Equal("STORE_ARTIFACT", result.Commands[0].Command);
+        Assert.Equal("ADVANCE_STAGE", result.Commands[1].Command);
+        Assert.Equal("y", result.Commands[0].Args["Content"]);
+    }
+
+    [Fact]
+    public void Parse_UnknownCommandWithEmphasis_PassesThroughToRemaining()
+    {
+        // `**TASK ASSIGNMENT:**` is not a known command — original line must
+        // survive in remaining text (preserves legacy block behavior).
+        var text = "**TASK ASSIGNMENT:**\nDo the thing\nLIST_ROOMS:";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("LIST_ROOMS", result.Commands[0].Command);
+        Assert.Contains("**TASK ASSIGNMENT:**", result.RemainingText);
+        Assert.Contains("Do the thing", result.RemainingText);
+    }
+
+    [Fact]
+    public void Parse_LowercaseInsideEmphasis_NotRecognizedAsCommand()
+    {
+        // Don't promote arbitrary bold text to commands — must still match
+        // the uppercase command-name shape.
+        var text = "**hello there:** some content";
+        var result = _parser.Parse(text);
+
+        Assert.Empty(result.Commands);
+        Assert.Contains("hello there", result.RemainingText);
+    }
+
+    [Theory]
+    [InlineData("STORE_ARTIFACT: Content=hello**", "hello**")]
+    [InlineData("STORE_ARTIFACT: Content=hello__", "hello__")]
+    [InlineData("STORE_ARTIFACT: Content=hello~~", "hello~~")]
+    [InlineData("STORE_ARTIFACT: Content=git", "git")]
+    public void Parse_UnpairedTrailingEmphasis_PreservedInValue(string text, string expectedContent)
+    {
+        // Regression guard for the v1 fix that over-eagerly stripped
+        // trailing emphasis from value text. Only paired whole-line wrappers
+        // get peeled — mid-line or unmatched trailing emphasis must survive.
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("STORE_ARTIFACT", result.Commands[0].Command);
+        Assert.Equal(expectedContent, result.Commands[0].Args["Content"]);
+    }
+
+    [Fact]
+    public void Parse_TrailingEmphasisInRawValue_Preserved()
+    {
+        // For a positional raw value (no key=value), trailing emphasis must
+        // also survive when it isn't paired with a leading wrapper.
+        var text = "SEARCH_CODE: query with **bold** word**";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("query with **bold** word**", result.Commands[0].Args["value"]);
+    }
+
+    [Theory]
+    [InlineData("**STORE_ARTIFACT: Type=X Content=Y**", "X", "Y")]
+    [InlineData("`STORE_ARTIFACT: Type=X Content=Y`", "X", "Y")]
+    [InlineData("__STORE_ARTIFACT: Type=X Content=Y__", "X", "Y")]
+    public void Parse_WholeLineWrappedCommandWithValue_StripsWrapper(string text, string expectedType, string expectedContent)
+    {
+        // When the entire line is wrapped in matching emphasis, peel one
+        // layer so the inner command parses cleanly.
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("STORE_ARTIFACT", result.Commands[0].Command);
+        Assert.Equal(expectedType, result.Commands[0].Args["Type"]);
+        Assert.Equal(expectedContent, result.Commands[0].Args["Content"]);
+    }
+
+    [Theory]
+    [InlineData("**STORE_ARTIFACT:** Type=X Content=Y**")]  // hybrid: keyword wrapped + trailing **
+    [InlineData("**hello**world**")]                          // unbalanced trailing pair inside
+    public void Parse_HybridUnbalancedEmphasis_DoesNotMisUnwrap(string text)
+    {
+        // Round-2 reviewer regression: TryUnwrapPairedEmphasis must refuse
+        // to peel when the inner content already contains the wrapper —
+        // otherwise it eats trailing characters that belong to the value.
+        var result = _parser.Parse(text);
+
+        if (result.Commands.Count == 1)
+        {
+            // STORE_ARTIFACT case: trailing ** must survive in the value
+            Assert.Contains("**", result.Commands[0].Args.Values.LastOrDefault() ?? "");
+        }
+        else
+        {
+            // Non-command (`**hello**world**`) just passes through to remaining
+            Assert.Empty(result.Commands);
+            Assert.Contains("**hello**world**", result.RemainingText);
+        }
+    }
+
+    [Fact]
+    public void Parse_IndentedUppercaseArgKey_NotMisDetectedAsNextCommand()
+    {
+        // Round-2 reviewer regression: NextCommandLookahead anchored at
+        // column 0. An indented uppercase key like `  TYPE:` inside an
+        // arg block must NOT terminate the prior command.
+        var text = "STORE_ARTIFACT:\n  TYPE: RequirementsDocument\n  CONTENT: full body";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("STORE_ARTIFACT", result.Commands[0].Command);
+        Assert.Equal("RequirementsDocument", result.Commands[0].Args["TYPE"]);
+        Assert.Equal("full body", result.Commands[0].Args["CONTENT"]);
+    }
+
+    [Fact]
+    public void Parse_IndentedBoldNextCommand_NotTreatedAsCommand()
+    {
+        // An indented `  **ADVANCE_STAGE:**` is inside a previous arg
+        // block, not a column-0 command. Lookahead doesn't fire (it's
+        // anchored at column 0), so the line is absorbed as continuation
+        // text of the prior arg — but no second command is emitted.
+        var text = "STORE_ARTIFACT:\n  Type: x\n  **ADVANCE_STAGE:**";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("STORE_ARTIFACT", result.Commands[0].Command);
+        Assert.Contains("x", result.Commands[0].Args["Type"]);
+    }
 }
