@@ -371,8 +371,21 @@ export const useSidebarStyles = makeStyles({
     flexShrink: 0,
   },
   roomAgentList: {
-    gridColumn: "1 / -1",
-    display: "none",
+    display: "grid",
+    gap: "1px",
+    marginLeft: "14px",
+    paddingLeft: "8px",
+    paddingTop: "2px",
+    paddingBottom: "4px",
+    borderLeft: "1px solid var(--aa-border)",
+  },
+  roomAgentListSeparator: {
+    height: "1px",
+    background: "var(--aa-border)",
+    marginLeft: "22px",
+    marginRight: "8px",
+    marginBottom: "2px",
+    opacity: 0.6,
   },
   roomAgentItem: {
     display: "flex",
