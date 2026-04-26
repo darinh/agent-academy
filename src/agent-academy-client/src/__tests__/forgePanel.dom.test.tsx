@@ -180,14 +180,17 @@ describe("ForgePanel", () => {
     expect(screen.getByText("Disabled")).toBeInTheDocument();
   });
 
-  it("shows Read-only badge when enabled but execution unavailable", async () => {
+  it("shows Execution disabled badge and banner when enabled but execution unavailable", async () => {
     mockGetStatus.mockResolvedValue(makeStatus({ executionAvailable: false }));
     mockListJobs.mockResolvedValue([]);
     mockListRuns.mockResolvedValue([]);
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Read-only")).toBeInTheDocument();
+      expect(screen.getByText("Execution disabled")).toBeInTheDocument();
     });
+    // Banner explains the distinction from the engine being fully disabled
+    expect(screen.getByText("Forge execution is disabled")).toBeInTheDocument();
+    expect(screen.queryByText("Forge engine is disabled")).not.toBeInTheDocument();
   });
 
   it("shows status cards with job counts", async () => {

@@ -751,8 +751,10 @@ export default function ForgePanel({ refreshTrigger }: { refreshTrigger?: number
             Forge
           </span>
           {status && (
-            <V3Badge color={status.enabled ? (status.executionAvailable ? "done" : "warn") : "muted"}>
-              {status.enabled ? (status.executionAvailable ? "Ready" : "Read-only") : "Disabled"}
+            <V3Badge
+              color={status.enabled ? (status.executionAvailable ? "done" : "warn") : "muted"}
+            >
+              {status.enabled ? (status.executionAvailable ? "Ready" : "Execution disabled") : "Disabled"}
             </V3Badge>
           )}
         </div>
@@ -787,6 +789,19 @@ export default function ForgePanel({ refreshTrigger }: { refreshTrigger?: number
           </span>
           <span style={{ fontFamily: "var(--aa-mono)", fontSize: "11px", color: "var(--aa-soft)" }}>
             Enable it in server configuration to start pipeline runs.
+          </span>
+        </div>
+      )}
+
+      {/* Execution disabled (kill switch) — engine is enabled but execution is gated off */}
+      {status && status.enabled && !status.executionAvailable && (
+        <div className={s.disabledBanner}>
+          <span style={{ fontSize: "28px" }}>⏸️</span>
+          <span style={{ fontFamily: "var(--aa-mono)", fontSize: "13px", color: "var(--aa-text)" }}>
+            Forge execution is disabled
+          </span>
+          <span style={{ fontFamily: "var(--aa-mono)", fontSize: "11px", color: "var(--aa-soft)" }}>
+            You can browse existing runs but cannot start new ones. Set <code>Forge:ExecutionEnabled</code> to <code>true</code> in server configuration to re-enable.
           </span>
         </div>
       )}
