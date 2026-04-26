@@ -30,10 +30,28 @@ public static class AgentPermissionHandler
 {
     // Permission kinds that are ALWAYS safe regardless of which tools the
     // agent has — these are tool-invocation envelopes (the SDK fires them
-    // when calling any registered AIFunction) and read operations.
+    // when calling any registered AIFunction), read operations, and SDK
+    // lifecycle hooks.
+    //
+    // Per inspection of GitHub.Copilot.SDK 0.2.2, the complete set of
+    // PermissionRequest discriminators the SDK can fire is:
+    //   custom-tool, hook, mcp, memory, read, shell, tool, url, write.
+    //
+    // - "tool" / "custom-tool" / "read": tool-invocation envelopes — fired
+    //   for every registered AIFunction call. Denying these stops the agent.
+    // - "hook": SDK session-lifecycle hooks. Fires during session priming,
+    //   before any user-initiated tool runs. Denying it surfaces as an
+    //   "unexpected user permission response" on the very first turn —
+    //   observed during P1.9 supervised acceptance run, 2026-04-26.
+    //
+    // The remaining four kinds (mcp, memory, shell, url, write) are NOT
+    // in this set by default — they're either denied outright (mcp, memory,
+    // url) or gated by tool registration via <see cref="ToolImpliedKinds"/>
+    // (shell, write).
     private static readonly HashSet<string> AlwaysSafeKinds = new(StringComparer.OrdinalIgnoreCase)
     {
         "custom-tool",
+        "hook",
         "read",
         "tool",
     };
@@ -68,9 +86,17 @@ public static class AgentPermissionHandler
     /// <summary>
     /// Creates a <see cref="PermissionRequestHandler"/> that approves
     /// permissions implied by the agent's registered tools, plus the
-    /// always-safe kinds (tool envelopes, reads). Denies everything else.
-    /// Logs the first 3 denials at Warning, the 4th as a suppression
-    /// notice, and subsequent denials at Debug.
+    /// always-safe kinds (tool envelopes, reads, SDK lifecycle hooks).
+    /// Denies everything else.
+    ///
+    /// Denial logging is deduplicated by <see cref="PermissionRequest.Kind"/>:
+    /// the FIRST time a given Kind is denied in this session it logs at
+    /// Warning (so a previously-unseen Kind — typically introduced by a new
+    /// SDK version — is always visible regardless of denial volume); every
+    /// subsequent denial of the same Kind logs at Debug to avoid spam.
+    /// This makes the diagnostic property structurally repro-free: a future
+    /// SDK can add a new kind and we will see it on the very first denial
+    /// even at default log level.
     /// </summary>
     /// <param name="registeredToolNames">
     /// The set of tool names registered for the session. If empty, all
@@ -142,7 +168,7 @@ public static class AgentPermissionHandler
             }
 
             var sessionId = invocation.SessionId ?? "unknown";
-            var count = Interlocked.Increment(ref state.Count);
+            var totalCount = Interlocked.Increment(ref state.Count);
 
             // Bump the per-turn denial counter on the tracker. The watchdog
             // uses this for the denial-storm stall trigger. If no turn is
@@ -150,23 +176,41 @@ public static class AgentPermissionHandler
             // a no-op — by design.
             tracker.IncrementDenialBySessionId(invocation.SessionId, request.Kind);
 
-            if (count <= 3)
+            // Dedup by Kind: log NEW kinds at Warning (always visible),
+            // repeats at Debug (suppress spam). Single dictionary keyed by
+            // Kind tracks both presence and count; access is serialised by
+            // a lock — contention is naturally low (one permission request
+            // in flight per session turn).
+            var key = request.Kind ?? string.Empty;
+            bool isNewKind;
+            int kindCount;
+            lock (state.KindCounts)
             {
-                logger.LogWarning(
-                    "Denied permission request: Kind={Kind}, Session={SessionId} (denial #{Count})",
-                    request.Kind, sessionId, count);
+                if (state.KindCounts.TryGetValue(key, out var existing))
+                {
+                    isNewKind = false;
+                    kindCount = existing + 1;
+                    state.KindCounts[key] = kindCount;
+                }
+                else
+                {
+                    isNewKind = true;
+                    kindCount = 1;
+                    state.KindCounts[key] = 1;
+                }
             }
-            else if (count == 4)
+
+            if (isNewKind)
             {
                 logger.LogWarning(
-                    "Denied permission request: Kind={Kind}, Session={SessionId} — suppressing further warnings ({Count} total denials)",
-                    request.Kind, sessionId, count);
+                    "Denied permission request: Kind={Kind}, Session={SessionId} (first denial of this Kind in session, total denials={TotalCount})",
+                    request.Kind, sessionId, totalCount);
             }
             else
             {
                 logger.LogDebug(
-                    "Denied permission request: Kind={Kind}, Session={SessionId} (denial #{Count})",
-                    request.Kind, sessionId, count);
+                    "Denied permission request: Kind={Kind}, Session={SessionId} (denial #{KindCount} of this Kind, total denials={TotalCount})",
+                    request.Kind, sessionId, kindCount, totalCount);
             }
 
             return Task.FromResult(new PermissionRequestResult
@@ -190,5 +234,11 @@ public static class AgentPermissionHandler
     private sealed class DenialState
     {
         public int Count;
+        // Tracks denial counts per distinct Kind for dedup-based logging.
+        // Access is gated by lock(KindCounts) — kept simple over a concurrent
+        // collection because contention here is naturally serialised by the
+        // SDK's permission-request cadence (one in flight per session turn).
+        public readonly Dictionary<string, int> KindCounts =
+            new(StringComparer.OrdinalIgnoreCase);
     }
 }
