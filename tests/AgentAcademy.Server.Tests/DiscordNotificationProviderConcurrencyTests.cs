@@ -84,13 +84,14 @@ public class DiscordNotificationProviderConcurrencyTests
     }
 
     [Fact]
-    public async Task DisconnectAsync_AfterDispose_ThrowsObjectDisposed()
+    public async Task DisconnectAsync_AfterDispose_IsIdempotentNoOp_DecisionC()
     {
         var connection = new FakeDiscordConnectionManager();
         var provider = CreateProvider(connection, out _);
         await provider.DisposeAsync();
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => provider.DisconnectAsync());
+        // Decision C: must NOT throw — Disposed is one of the no-op states.
+        await provider.DisconnectAsync();
     }
 
     [Fact]
@@ -289,6 +290,10 @@ public class DiscordNotificationProviderConcurrencyTests
         var connection = new FakeDiscordConnectionManager();
         var provider = CreateProvider(connection, out _);
         await provider.ConfigureAsync(ValidConfig());
+        // Force the FSM into Connected so DisconnectAsync exercises the
+        // teardown branch (per decision C, Disconnect from Configured is a
+        // no-op and would not exercise the drain contract).
+        provider.ForceLifecycleStateForTesting(LifecycleState.Connected);
 
         var sendStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseSend = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -359,6 +364,43 @@ public class DiscordNotificationProviderConcurrencyTests
         releaseSend.SetResult(true);
         Assert.True(await inflightTask);
         await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ConfigureAsync_WhileConnected_ThrowsInvalidOperation_DecisionA1()
+    {
+        // Decision A1: reconfiguring a live connection silently used to rewrite
+        // _config without tearing down the underlying client (different BotToken
+        // → addressing the new GuildId with the old client). The FSM rejects.
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+        await provider.ConfigureAsync(ValidConfig());
+        provider.ForceLifecycleStateForTesting(LifecycleState.Connected);
+
+        var newConfig = ValidConfig();
+        newConfig["BotToken"] = "different-token";
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.ConfigureAsync(newConfig));
+        Assert.Contains("DisconnectAsync first", ex.Message);
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_WhenNotConnected_IsIdempotentNoOp_DecisionC()
+    {
+        // Decision C: Disconnect from non-connected state is an idempotent no-op,
+        // not an error. Today's settings page double-click pattern relies on this.
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+        await provider.ConfigureAsync(ValidConfig());
+
+        // Three back-to-back disconnects from Configured. None should throw,
+        // none should hit the connection manager.
+        await provider.DisconnectAsync();
+        await provider.DisconnectAsync();
+        await provider.DisconnectAsync();
+
+        Assert.Equal(0, connection.DisposeClientCallCount);
     }
 
     [Fact]

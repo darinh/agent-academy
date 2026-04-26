@@ -142,6 +142,14 @@ public class NotificationController : ControllerBase
             await transaction.CommitAsync(cancellationToken);
             return Ok(new { status = "configured", providerId = id });
         }
+        catch (InvalidOperationException ex)
+        {
+            // Decision A1: ConfigureAsync from Connecting/Connected throws to
+            // force the caller to Disconnect first. Surface as 409 Conflict
+            // (precondition failure) instead of 500.
+            _logger.LogWarning(ex, "Configure rejected for provider '{ProviderId}': {Reason}", id, ex.Message);
+            return Conflict(ApiProblem.Conflict(ex.Message));
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to configure provider '{ProviderId}'", id);
