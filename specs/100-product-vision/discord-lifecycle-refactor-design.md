@@ -1,6 +1,6 @@
 # Discord Notification Provider — Lifecycle Refactor: Design Doc
 
-**Status**: APPROVED (agent-decided 2026-04-25; humans may override in PR review).
+**Status**: IMPLEMENTED 2026-04-26 via PR #153 (squash-merged to develop). New `DiscordProviderLifecycle` FSM owns Configure/Connect/Disconnect/Dispose; `DiscordNotificationProvider` reduced to transport. 553 new unit tests in `DiscordProviderLifecycleTests` cover the state machine; full server suite green (6519/6519). Humans may still amend any §6 decision via follow-up PR.
 **Backlog source**: `roadmap.md` Proposed Additions — "Refactor candidate: `DiscordNotificationProvider.cs`" (surfaced 2026-04-25 by stabilization gate).
 **Risk if implemented**: 🔴 (concurrency-sensitive; central to the only operational notification path; touches dispose semantics).
 **Author**: anvil (operator: agent-academy), 2026-04-25.
