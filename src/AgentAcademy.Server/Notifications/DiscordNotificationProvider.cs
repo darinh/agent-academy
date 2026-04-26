@@ -6,11 +6,21 @@ namespace AgentAcademy.Server.Notifications;
 
 /// <summary>
 /// Notification provider that delivers notifications and collects user input via a Discord bot.
-/// Owns the Discord client connection lifecycle and delegates to:
+///
+/// <para>
+/// The provider is a thin adapter over its collaborators:
 /// <see cref="DiscordChannelManager"/> for channel/category infrastructure,
 /// <see cref="DiscordMessageSender"/> for outbound message delivery,
 /// <see cref="DiscordMessageRouter"/> for inbound message routing,
 /// <see cref="DiscordInputHandler"/> for interactive input collection.
+/// </para>
+///
+/// <para>
+/// Lifecycle (state, locking, drain, dispose) is owned by
+/// <see cref="DiscordProviderLifecycle"/> — see
+/// <c>specs/100-product-vision/discord-lifecycle-refactor-design.md</c> for the
+/// full state machine and the design decisions behind it.
+/// </para>
 /// </summary>
 public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncDisposable
 {
@@ -20,16 +30,11 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private readonly DiscordMessageSender _sender;
     private readonly DiscordMessageRouter _router;
     private readonly IDiscordConnectionManager _connection;
-    private readonly OperationDrainTracker _drainTracker = new();
-    private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private readonly DiscordProviderLifecycle _lifecycle = new();
 
-    // _config is mutated under _connectLock (ConfigureAsync). Declared volatile so
-    // lockless readers (IsConfigured, GetGuildIfConnected/Configured, callers that
-    // capture a snapshot via `var config = _config`) see the latest published value
-    // on weak memory models (e.g. ARM64) without having to take the lock themselves.
-    private volatile DiscordProviderConfig? _config;
+    // Hooked-state for the inbound MessageReceived subscription. Mutated only
+    // under the connect lock (held by Connect/Disconnect/Dispose leases).
     private bool _messageReceivedHooked;
-    private int _disposed;
 
     // Bounded wait so a hung send (e.g. Discord API stall) can't block teardown
     // forever. After the timeout we proceed with teardown anyway; the in-flight
@@ -59,10 +64,16 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     public string DisplayName => "Discord";
 
     /// <inheritdoc />
-    public bool IsConfigured => _config is not null;
+    public bool IsConfigured => _lifecycle.IsConfigured;
 
     /// <inheritdoc />
-    public bool IsConnected => _connection.IsConnected;
+    /// <remarks>
+    /// Combines the FSM's Connected snapshot with the live socket state from
+    /// <see cref="IDiscordConnectionManager.IsConnected"/>. The FSM can know
+    /// the provider <em>intends</em> to be connected; only the connection
+    /// manager knows whether the underlying Discord socket actually is.
+    /// </remarks>
+    public bool IsConnected => _lifecycle.IsConnectedSnapshot && _connection.IsConnected;
 
     /// <inheritdoc />
     public string? LastError => _connection.LastError;
@@ -70,140 +81,110 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// <inheritdoc />
     public async Task ConfigureAsync(Dictionary<string, string> configuration, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
-
         // Parse/validate outside the lock — FromDictionary may throw on bad input,
         // and we don't want to serialize other callers on argument validation.
-        var newConfig = DiscordProviderConfig.FromDictionary(configuration);
+        var parsed = DiscordProviderConfig.FromDictionary(configuration);
 
-        // Acquire _connectLock so the read-modify-write of _config (OwnerId
-        // preservation + assignment) is atomic with respect to ConnectAsync,
-        // DisconnectAsync, DisposeAsync, and other ConfigureAsync callers.
-        // Without this, ConnectAsync could snapshot a stale _config and connect
-        // with the old BotToken while subsequent operations read the new GuildId /
-        // ChannelId, leaving the provider connected to one guild but addressing
-        // messages to another.
-        await _connectLock.WaitAsync(cancellationToken);
-        try
-        {
-            // Re-check after acquiring the lock: DisposeAsync may have flipped
-            // _disposed between our entry guard and now.
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+        var effective = await _lifecycle.ConfigureAsync(parsed, cancellationToken);
 
-            // Preserve prior OwnerId across reconfiguration when the new config omits it.
-            // This matches the original field-based behavior where OwnerId was sticky:
-            // silently widening access scope on reconfigure would be a surprising regression.
-            if (newConfig.OwnerId is null && _config?.OwnerId is { } previousOwnerId)
-                newConfig = newConfig with { OwnerId = previousOwnerId };
-
-            _config = newConfig;
-
-            _logger.LogInformation("Discord provider configured for guild {GuildId}, channel {ChannelId}, owner {OwnerId}",
-                newConfig.GuildId, newConfig.ChannelId, newConfig.OwnerId?.ToString() ?? "(any user)");
-        }
-        finally
-        {
-            _connectLock.Release();
-        }
+        _logger.LogInformation(
+            "Discord provider configured for guild {GuildId}, channel {ChannelId}, owner {OwnerId}",
+            effective.GuildId, effective.ChannelId, effective.OwnerId?.ToString() ?? "(any user)");
     }
 
     /// <inheritdoc />
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+        // Stale-socket recovery (matches pre-FSM behaviour): if the FSM thinks
+        // we're Connected but the underlying socket has dropped (e.g. Discord
+        // gateway disconnect, network blip), the user's manual Connect call
+        // would otherwise short-circuit as "AlreadyConnected" and silently leave
+        // them stuck. Per Decision D we don't auto-reconnect on socket drops,
+        // but a user-initiated ConnectAsync MUST be able to recover. Disconnect
+        // first to clear FSM + any lingering hooks, then proceed normally.
+        if (_lifecycle.IsConnectedSnapshot && !_connection.IsConnected)
+        {
+            _logger.LogInformation("Discord socket has dropped while FSM reports Connected; disconnecting before reconnect");
+            await DisconnectAsync(cancellationToken);
+        }
 
-        await _connectLock.WaitAsync(cancellationToken);
+        await using var lease = await _lifecycle.BeginConnectAsync(cancellationToken);
+
+        if (lease.AlreadyConnectedFlag)
+        {
+            _logger.LogDebug("Discord provider is already connected");
+            return;
+        }
+
+        // Ensure any external subscription is cleared before the connection
+        // manager tears down a stale client. (Defensive: should already be
+        // false in Configured state.)
+        UnhookRouter();
+
+        await _connection.ConnectAsync(lease.Config.BotToken, cancellationToken);
+
         try
         {
-            // Re-check after acquiring the lock: DisposeAsync may have flipped
-            // _disposed between our entry guard and now.
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+            // Rebuild channel mapping from existing Discord state (survives restarts).
+            var guild = _connection.Client!.GetGuild(lease.Config.GuildId);
+            if (guild is not null)
+                await _channelManager.RebuildAsync(guild);
 
-            // Read _config INSIDE the lock so we always use the most recently
-            // published config. Reading it outside the lock would let a concurrent
-            // ConfigureAsync swap _config between our read and the lock acquisition,
-            // causing Connect to use a stale BotToken.
-            var config = _config
-                ?? throw new InvalidOperationException("Discord provider must be configured before connecting. Call ConfigureAsync first.");
-
-            if (_connection.IsConnected)
-            {
-                _logger.LogDebug("Discord provider is already connected");
-                return;
-            }
-
-            // Ensure any external subscription is cleared before the connection
-            // manager tears down a stale client.
+            // Attach inbound message router AFTER rebuild so channel mappings are ready.
+            _connection.Client.MessageReceived += _router.HandleMessageReceivedAsync;
+            _messageReceivedHooked = true;
+        }
+        catch (Exception ex)
+        {
+            // Post-connect init failed: the client is alive but the provider
+            // would be in an inconsistent state. Tear down so that a retry
+            // can reconnect cleanly and we don't leak the underlying client.
+            _logger.LogError(ex, "Discord provider post-connect initialization failed; tearing down client");
             UnhookRouter();
-
-            await _connection.ConnectAsync(config.BotToken, cancellationToken);
-
             try
             {
-                // Rebuild channel mapping from existing Discord state (survives restarts).
-                var guild = _connection.Client!.GetGuild(config.GuildId);
-                if (guild is not null)
-                    await _channelManager.RebuildAsync(guild);
-
-                // Attach inbound message router AFTER rebuild so channel mappings are ready.
-                _connection.Client.MessageReceived += _router.HandleMessageReceivedAsync;
-                _messageReceivedHooked = true;
+                await _connection.DisposeClientAsync();
             }
-            catch (Exception ex)
+            catch (Exception disposeEx)
             {
-                // Post-connect init failed: the client is alive but the provider
-                // would be in an inconsistent state. Tear down so that a retry
-                // can reconnect cleanly and we don't leak the underlying client.
-                _logger.LogError(ex, "Discord provider post-connect initialization failed; tearing down client");
-                UnhookRouter();
-                try
-                {
-                    await _connection.DisposeClientAsync();
-                }
-                catch (Exception disposeEx)
-                {
-                    _logger.LogWarning(disposeEx, "Error disposing Discord client after failed post-connect init");
-                }
-                throw;
+                _logger.LogWarning(disposeEx, "Error disposing Discord client after failed post-connect init");
             }
+            // Lease falls out of scope without Complete() — FSM rolls back to Configured.
+            throw;
+        }
 
-            _logger.LogInformation("Discord provider connected");
-        }
-        finally
-        {
-            _connectLock.Release();
-        }
+        // All post-connect initialization succeeded — mark the connect complete
+        // so the FSM transitions Connecting -> Connected on lease disposal.
+        lease.Complete();
+        _logger.LogInformation("Discord provider connected");
     }
 
     /// <inheritdoc />
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+        await using var lease = await _lifecycle.BeginDisconnectAsync(cancellationToken);
 
-        await _connectLock.WaitAsync(cancellationToken);
-        try
+        if (!lease.NeedsTeardown)
         {
-            _drainTracker.BeginTeardown();
-            try
-            {
-                await WaitForDrainWithLoggingAsync(DrainTimeout, cancellationToken);
+            // Idempotent no-op (state was Created/Configured/Disconnecting). Decision C.
+            return;
+        }
 
-                UnhookRouter();
-                await _channelManager.ResetAsync();
-                await _connection.DisposeClientAsync();
-                _logger.LogInformation("Discord provider disconnected");
-            }
-            finally
-            {
-                // Allow sends again — the next ConnectAsync will spin up a fresh
-                // client and the provider becomes usable again.
-                _drainTracker.EndTeardown();
-            }
-        }
-        finally
-        {
-            _connectLock.Release();
-        }
+        // Drain in-flight ops, then tear down the underlying client. Lease
+        // dispose returns FSM to Configured + clears the teardown flag.
+        //
+        // Drain + teardown use CancellationToken.None: once the FSM has
+        // transitioned to Disconnecting, cancelling the caller's token
+        // mid-teardown would skip UnhookRouter / ResetAsync / DisposeClientAsync
+        // while the lease still rolls FSM back to Configured — leaving a live
+        // socket orphaned with the provider reporting disconnected. The drain
+        // itself is bounded by DrainTimeout so this can't hang indefinitely.
+        await WaitForDrainWithLoggingAsync(DrainTimeout, CancellationToken.None);
+
+        UnhookRouter();
+        await _channelManager.ResetAsync();
+        await _connection.DisposeClientAsync();
+        _logger.LogInformation("Discord provider disconnected");
     }
 
     /// <inheritdoc />
@@ -213,6 +194,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
         return await ExecuteSafeWithConnectedGuildAsync(
             operationName: "send notification",
+            kind: OperationKind.Send,
             operation: (guild, config) =>
                 !string.IsNullOrEmpty(message.RoomId)
                     ? _sender.SendToRoomChannelAsync(guild, config.ChannelId, message, cancellationToken)
@@ -225,62 +207,56 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!TryEnterOperation())
+        using var lease = _lifecycle.TryEnterOperation(OperationKind.RequestInput);
+        if (!lease.Permitted)
         {
-            _logger.LogDebug("Cannot request input — Discord provider is shutting down");
+            _logger.LogDebug("Cannot request input — Discord provider {Reason}", lease.RejectionReason);
             return null;
         }
 
+        var resolved = GetGuildIfConnected("request input");
+        if (resolved is null) return null;
+        var (guild, config) = resolved.Value;
+
         try
         {
-            var resolved = GetGuildIfConnected("request input");
-            if (resolved is null) return null;
-            var (guild, config) = resolved.Value;
-
-            try
+            var channel = DiscordMessageSender.ResolveDefaultChannel(guild, config.ChannelId);
+            if (channel is null)
             {
-                var channel = DiscordMessageSender.ResolveDefaultChannel(guild, config.ChannelId);
-                if (channel is null)
-                {
-                    _logger.LogError("Discord channel {ChannelId} not found in guild {GuildId}", config.ChannelId, config.GuildId);
-                    return null;
-                }
-
-                var embed = new EmbedBuilder()
-                    .WithTitle("Input Requested")
-                    .WithDescription(request.Prompt)
-                    .WithColor(Color.Gold)
-                    .WithCurrentTimestamp();
-
-                if (request.AgentName is not null)
-                    embed.AddField("Agent", request.AgentName, inline: true);
-                if (request.RoomId is not null)
-                    embed.AddField("Room", request.RoomId, inline: true);
-
-                if (request.Choices is { Count: > 0 })
-                {
-                    return await _inputHandler.RequestChoiceInputAsync(
-                        _connection.Client!, channel, embed, request.Choices, ProviderId, cancellationToken);
-                }
-
-                if (request.AllowFreeform)
-                {
-                    return await _inputHandler.RequestFreeformInputAsync(
-                        _connection.Client!, channel, embed, config.ChannelId, config.OwnerId, ProviderId, cancellationToken);
-                }
-
-                _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
+                _logger.LogError("Discord channel {ChannelId} not found in guild {GuildId}", config.ChannelId, config.GuildId);
                 return null;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+
+            var embed = new EmbedBuilder()
+                .WithTitle("Input Requested")
+                .WithDescription(request.Prompt)
+                .WithColor(Color.Gold)
+                .WithCurrentTimestamp();
+
+            if (request.AgentName is not null)
+                embed.AddField("Agent", request.AgentName, inline: true);
+            if (request.RoomId is not null)
+                embed.AddField("Room", request.RoomId, inline: true);
+
+            if (request.Choices is { Count: > 0 })
             {
-                _logger.LogError(ex, "Failed to request input via Discord");
-                return null;
+                return await _inputHandler.RequestChoiceInputAsync(
+                    _connection.Client!, channel, embed, request.Choices, ProviderId, cancellationToken);
             }
+
+            if (request.AllowFreeform)
+            {
+                return await _inputHandler.RequestFreeformInputAsync(
+                    _connection.Client!, channel, embed, config.ChannelId, config.OwnerId, ProviderId, cancellationToken);
+            }
+
+            _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
+            return null;
         }
-        finally
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _drainTracker.Leave();
+            _logger.LogError(ex, "Failed to request input via Discord");
+            return null;
         }
     }
 
@@ -305,38 +281,16 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// <inheritdoc cref="IAsyncDisposable.DisposeAsync" />
     public async ValueTask DisposeAsync()
     {
-        // Single-winner dispose gate. Interlocked.Exchange ensures exactly one
-        // caller proceeds to teardown; other concurrent callers return immediately
-        // without touching _connectLock. This prevents the ObjectDisposedException
-        // race where one thread could Dispose the semaphore while another was
-        // still waiting on or releasing it.
-        if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
+        await using var lease = await _lifecycle.BeginDisposeAsync();
+        if (!lease.ShouldRunTeardown) return;
 
-        // Reject any new outbound operations starting between here and teardown.
-        // _disposed alone isn't enough because tracked ops check _drainTracker.
-        _drainTracker.BeginTeardown();
+        // Wait for in-flight sends/inputs that captured a client snapshot to
+        // complete before disposing the underlying client. Bounded so a wedged
+        // operation can't deadlock disposal.
+        await WaitForDrainWithLoggingAsync(DrainTimeout, CancellationToken.None);
 
-        // Serialize with any in-flight ConnectAsync/DisconnectAsync so we don't
-        // tear down the client mid-connect and leave orphaned handlers.
-        await _connectLock.WaitAsync();
-        try
-        {
-            // Wait for in-flight sends/inputs that captured a client snapshot to
-            // complete before disposing the underlying client. Bounded so a wedged
-            // operation can't deadlock disposal.
-            await WaitForDrainWithLoggingAsync(DrainTimeout, CancellationToken.None);
-
-            UnhookRouter();
-            await _connection.DisposeClientAsync();
-        }
-        finally
-        {
-            _connectLock.Release();
-            // Intentionally NOT disposing _connectLock. SemaphoreSlim only needs
-            // Dispose for its AvailableWaitHandle (unused here), and disposing
-            // it while other callers (e.g. a late ConnectAsync) may still race
-            // into WaitAsync/Release is precisely the bug we're avoiding.
-        }
+        UnhookRouter();
+        await _connection.DisposeClientAsync();
     }
 
     /// <summary>
@@ -348,6 +302,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
         return await ExecuteSafeWithConnectedGuildAsync(
             operationName: "send agent question",
+            kind: OperationKind.Send,
             operation: (guild, _) => _sender.SendAgentQuestionAsync(guild, question, cancellationToken),
             onFailure: ex => _logger.LogError(ex, "Failed to send agent question from '{AgentName}'", question.AgentName));
     }
@@ -361,10 +316,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
         return await ExecuteSafeWithConnectedGuildAsync(
             operationName: "send direct message",
+            kind: OperationKind.Send,
             operation: (guild, _) => _sender.SendDirectMessageAsync(guild, dm, cancellationToken),
             onFailure: ex => _logger.LogError(ex, "Failed to send DM for '{AgentName}'", dm.AgentName));
     }
-
 
     /// <summary>
     /// Renames the Discord channel associated with a room (delegates to channel manager).
@@ -382,17 +337,18 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             guild => _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken));
     }
 
-
     #region Private helpers
 
     /// <summary>
-    /// Resolves the Discord guild and current config when the provider is connected.
-    /// Logs a warning if disconnected or guild unavailable. Returns null on failure.
+    /// Resolves the Discord guild and current config when the provider is
+    /// connected at the socket level. Logs a warning and returns null on
+    /// failure. Caller MUST already hold an operation lease (so the snapshot
+    /// is consistent with the gate that admitted them).
     /// </summary>
     private (SocketGuild Guild, DiscordProviderConfig Config)? GetGuildIfConnected(string operationName)
     {
         var client = _connection.Client;
-        var config = _config;
+        var config = _lifecycle.ConfigSnapshot;
         if (!_connection.IsConnected || client is null || config is null)
         {
             _logger.LogWarning("Cannot {Operation} — Discord provider is not connected", operationName);
@@ -410,13 +366,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     }
 
     /// <summary>
-    /// Resolves the Discord guild when the provider is configured (but not necessarily fully connected).
-    /// Used by best-effort lifecycle operations. Returns null silently if unavailable.
+    /// Resolves the Discord guild when the provider is configured (but not
+    /// necessarily fully connected). Used by best-effort lifecycle operations.
+    /// Returns null silently if unavailable.
     /// </summary>
     private SocketGuild? GetGuildIfConfigured()
     {
         var client = _connection.Client;
-        var config = _config;
+        var config = _lifecycle.ConfigSnapshot;
         if (client is null || config is null) return null;
         return client.GetGuild(config.GuildId);
     }
@@ -432,70 +389,41 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
     private async Task<bool> ExecuteSafeWithConnectedGuildAsync(
         string operationName,
+        OperationKind kind,
         Func<SocketGuild, DiscordProviderConfig, Task<bool>> operation,
         Action<Exception> onFailure)
     {
-        if (!TryEnterOperation())
+        using var lease = _lifecycle.TryEnterOperation(kind);
+        if (!lease.Permitted)
         {
-            _logger.LogDebug("Cannot {Operation} — Discord provider is shutting down", operationName);
+            _logger.LogDebug("Cannot {Operation} — {Reason}", operationName, lease.RejectionReason);
             return false;
         }
 
+        var resolved = GetGuildIfConnected(operationName);
+        if (resolved is null) return false;
+        var (guild, config) = resolved.Value;
+
         try
         {
-            var resolved = GetGuildIfConnected(operationName);
-            if (resolved is null) return false;
-            var (guild, config) = resolved.Value;
-
-            try
-            {
-                return await operation(guild, config);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                onFailure(ex);
-                return false;
-            }
+            return await operation(guild, config);
         }
-        finally
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _drainTracker.Leave();
+            onFailure(ex);
+            return false;
         }
     }
 
     private async Task ExecuteWithConfiguredGuildAsync(Func<SocketGuild, Task> operation)
     {
-        if (!TryEnterOperation()) return;
+        using var lease = _lifecycle.TryEnterOperation(OperationKind.RoomLifecycle);
+        if (!lease.Permitted) return;
 
-        try
-        {
-            var guild = GetGuildIfConfigured();
-            if (guild is null) return;
+        var guild = GetGuildIfConfigured();
+        if (guild is null) return;
 
-            await operation(guild);
-        }
-        finally
-        {
-            _drainTracker.Leave();
-        }
-    }
-
-    /// <summary>
-    /// Composite guard: checks provider-level disposed state, then delegates
-    /// to <see cref="OperationDrainTracker.TryEnter"/> for teardown checks.
-    /// </summary>
-    private bool TryEnterOperation()
-    {
-        if (Volatile.Read(ref _disposed) == 1) return false;
-        if (!_drainTracker.TryEnter()) return false;
-        // Re-check after entering: dispose may have set _disposed between our
-        // first check and the tracker increment.
-        if (Volatile.Read(ref _disposed) == 1)
-        {
-            _drainTracker.Leave();
-            return false;
-        }
-        return true;
+        await operation(guild);
     }
 
     /// <summary>
@@ -503,15 +431,12 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// </summary>
     private async Task WaitForDrainWithLoggingAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _drainTracker.WaitForDrainAsync(timeout, cancellationToken);
-        }
-        catch (TimeoutException)
+        var drained = await _lifecycle.WaitForDrainAsync(timeout, cancellationToken);
+        if (!drained)
         {
             _logger.LogWarning(
                 "Discord provider teardown proceeding with {InFlight} operation(s) still in flight after {Timeout}",
-                _drainTracker.InFlightCount, timeout);
+                _lifecycle.InFlightCount, timeout);
         }
     }
 
@@ -522,19 +447,30 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// operation tracker treats it as a real send. Lets tests drive teardown
     /// races without needing a live Discord client. Production code MUST use
     /// the public surface (SendNotificationAsync etc.) which routes through
-    /// the same tracker via ExecuteSafeWithConnectedGuildAsync.
+    /// the same tracker via <see cref="ExecuteSafeWithConnectedGuildAsync"/>.
+    ///
+    /// <para>
+    /// Bypasses the state-based gate (Connected requirement) — the test only
+    /// needs the drain semantics, not a live connection.
+    /// </para>
     /// </summary>
     internal async Task<bool> RunUnderInFlightForTestingAsync(Func<Task> body)
     {
-        if (!TryEnterOperation()) return false;
-        try
-        {
-            await body();
-            return true;
-        }
-        finally
-        {
-            _drainTracker.Leave();
-        }
+        using var lease = _lifecycle.TryEnterDrainOperationForTesting();
+        if (!lease.Permitted) return false;
+        await body();
+        return true;
+    }
+
+    /// <summary>
+    /// Internal test seam: forces the FSM into the given lifecycle state
+    /// without running the underlying connect/disconnect protocol. Used by
+    /// concurrency tests that need to assert the drain-on-disconnect contract
+    /// without a real <see cref="DiscordSocketClient"/>.
+    /// </summary>
+    internal void ForceLifecycleStateForTesting(LifecycleState state)
+    {
+        // Reuse the captured config if any so IsConfigured reflects the forced state.
+        _lifecycle.ForceStateForTesting(state, _lifecycle.ConfigSnapshot);
     }
 }
