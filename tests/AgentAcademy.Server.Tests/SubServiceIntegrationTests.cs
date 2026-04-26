@@ -99,7 +99,7 @@ public class SubServiceIntegrationTests : IDisposable
         _messages = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService, new MessageBroadcaster());
         _breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, _taskQueries, _agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, _breakouts, _agentLocations, _messages, _activityPublisher);
-        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, _messages, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
+        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, _messages, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db), _catalog);
         _workspaceRooms = new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activityPublisher);
         _roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, _activityPublisher);
         _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms, _workspaceRooms);

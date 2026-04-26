@@ -239,6 +239,172 @@ public class RoomServiceTests : IDisposable
         Assert.Equal(2, rooms.Count);
     }
 
+    // ── U5: Main Collaboration Room pinned first ──────────────────
+
+    [Fact]
+    public async Task GetRoomsAsync_PinsCatalogDefaultRoomIdFirst()
+    {
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        // Names chosen so alphabetical ordering would NOT put main first.
+        db.Rooms.Add(MakeRoom("r-alpha", "Alpha Discussion"));
+        db.Rooms.Add(MakeRoom("main", "Anything")); // matches catalog DefaultRoomId
+        db.Rooms.Add(MakeRoom("r-zulu", "Zulu Brainstorm"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(3, rooms.Count);
+        Assert.Equal("main", rooms[0].Id);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_PinsCatalogDefaultRoomNameFirst()
+    {
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Rooms.Add(MakeRoom("r-alpha", "Alpha Discussion"));
+        db.Rooms.Add(MakeRoom("r-main", "Main Collaboration Room"));
+        db.Rooms.Add(MakeRoom("r-zulu", "Zulu Brainstorm"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(3, rooms.Count);
+        Assert.Equal("r-main", rooms[0].Id);
+        Assert.Equal("Main Collaboration Room", rooms[0].Name);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_PinsWorkspaceMainRoomFirstBySuffix()
+    {
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Workspaces.Add(MakeWorkspace("/projects/alpha", "Alpha", isActive: true));
+        // WorkspaceRoomService creates rooms ending in "Main Room" / "Collaboration Room"
+        db.Rooms.Add(MakeRoom("alpha-main", "Alpha Main Room", workspacePath: "/projects/alpha"));
+        db.Rooms.Add(MakeRoom("alpha-design", "Aaa Design Sync", workspacePath: "/projects/alpha"));
+        db.Rooms.Add(MakeRoom("alpha-zulu", "Zulu Notes", workspacePath: "/projects/alpha"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(3, rooms.Count);
+        Assert.Equal("alpha-main", rooms[0].Id);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_PinsCollaborationRoomSuffixFirst()
+    {
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Workspaces.Add(MakeWorkspace("/projects/alpha", "Alpha", isActive: true));
+        db.Rooms.Add(MakeRoom("alpha-main", "Alpha Collaboration Room", workspacePath: "/projects/alpha"));
+        db.Rooms.Add(MakeRoom("alpha-other", "Aaa Other Room", workspacePath: "/projects/alpha"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(2, rooms.Count);
+        Assert.Equal("alpha-main", rooms[0].Id);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_NonMainRoomsSortByNameAfterMain()
+    {
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Rooms.Add(MakeRoom("r-charlie", "Charlie"));
+        db.Rooms.Add(MakeRoom("r-alpha", "Alpha"));
+        db.Rooms.Add(MakeRoom("r-main", "Main Collaboration Room"));
+        db.Rooms.Add(MakeRoom("r-bravo", "Bravo"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(4, rooms.Count);
+        Assert.Equal("r-main", rooms[0].Id);
+        Assert.Equal("Alpha", rooms[1].Name);
+        Assert.Equal("Bravo", rooms[2].Name);
+        Assert.Equal("Charlie", rooms[3].Name);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_DoesNotPinUnrelatedRoomContainingMainSubstring()
+    {
+        // Regression: old heuristic (Contains("Main") && Contains("Room")) would
+        // wrongly promote rooms like "Mainframe Modernization Room" or
+        // "Project Maintenance Room" to first position.
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Rooms.Add(MakeRoom("r-frame", "Mainframe Modernization Room"));
+        db.Rooms.Add(MakeRoom("r-aaa", "Aaa Sync"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(2, rooms.Count);
+        Assert.Equal("Aaa Sync", rooms[0].Name);
+        Assert.Equal("Mainframe Modernization Room", rooms[1].Name);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_WorkspaceMainBeatsLegacyDefaultWhenBothPresent()
+    {
+        // Reviewer-caught edge: legacy catalog DefaultRoomId may coexist with a
+        // workspace-scoped main room. Mirror WorkspaceRoomService precedence —
+        // the workspace-scoped main room should appear first, legacy second.
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Workspaces.Add(MakeWorkspace("/projects/alpha", "Alpha", isActive: true));
+        db.Rooms.Add(MakeRoom("main", "Main Collaboration Room")); // legacy, null workspace
+        db.Rooms.Add(MakeRoom("alpha-main", "Alpha Main Room", workspacePath: "/projects/alpha"));
+        db.Rooms.Add(MakeRoom("alpha-other", "Aaa Discussion", workspacePath: "/projects/alpha"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(3, rooms.Count);
+        Assert.Equal("alpha-main", rooms[0].Id);
+        Assert.Equal("main", rooms[1].Id);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_WorkspaceMainBeatsNullWorkspaceMainNamedRoom()
+    {
+        // Tier-0 must require workspace-scope, so a null-workspace room that happens to
+        // be named like a main room (e.g. left over from a prior tenant) does not
+        // contend with the active workspace's actual main room.
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Workspaces.Add(MakeWorkspace("/projects/alpha", "Alpha", isActive: true));
+        db.Rooms.Add(MakeRoom("global-main", "Global Main Room")); // null workspace, name match, not legacy id
+        db.Rooms.Add(MakeRoom("alpha-main", "Alpha Main Room", workspacePath: "/projects/alpha"));
+        await db.SaveChangesAsync();
+
+        var rooms = await svc.GetRoomsAsync();
+
+        Assert.Equal(2, rooms.Count);
+        Assert.Equal("alpha-main", rooms[0].Id);
+        Assert.Equal("global-main", rooms[1].Id);
+    }
+
     // ── GetRoomAsync ──────────────────────────────────────────────
 
     [Fact]

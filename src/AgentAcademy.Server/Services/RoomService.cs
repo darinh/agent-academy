@@ -32,6 +32,7 @@ public sealed class RoomService : IRoomService
     private readonly IMessageService _messages;
     private readonly IRoomSnapshotBuilder _snapshots;
     private readonly IPhaseTransitionValidator _phaseValidator;
+    private readonly IAgentCatalog _catalog;
 
     public RoomService(
         AgentAcademyDbContext db,
@@ -39,7 +40,8 @@ public sealed class RoomService : IRoomService
         IActivityPublisher activity,
         IMessageService messages,
         IRoomSnapshotBuilder snapshots,
-        IPhaseTransitionValidator phaseValidator)
+        IPhaseTransitionValidator phaseValidator,
+        IAgentCatalog catalog)
     {
         _db = db;
         _logger = logger;
@@ -47,6 +49,7 @@ public sealed class RoomService : IRoomService
         _messages = messages;
         _snapshots = snapshots;
         _phaseValidator = phaseValidator;
+        _catalog = catalog;
     }
 
     // ── Room Queries ────────────────────────────────────────────
@@ -74,9 +77,35 @@ public sealed class RoomService : IRoomService
             query = query.Where(r => r.Status != nameof(RoomStatus.Archived));
         }
 
+        // Pin the main collaboration room first. Mirrors IsMainCollaborationRoomAsync
+        // and WorkspaceRoomService precedence:
+        //   tier 0 — workspace-scoped main room: name matches catalog name or ends in
+        //            "Main Room" / "Collaboration Room", lives in the active workspace,
+        //            and is NOT the legacy catalog default id
+        //   tier 1 — legacy catalog default room (id == _catalog.DefaultRoomId), or any
+        //            other name-matching room (e.g., a null-workspace "main"-named room
+        //            kept around as a global fallback)
+        //   tier 2 — everything else
+        // ThenBy(Id) provides a deterministic tie-breaker.
+        var defaultRoomId = _catalog.DefaultRoomId;
+        var defaultRoomName = _catalog.DefaultRoomName;
+
         var rooms = await query
-            .OrderBy(r => (r.Name.Contains("Main") && (r.Name.Contains("Room") || r.Name.Contains("Collaboration"))) ? 0 : 1)
+            .OrderBy(r =>
+                (r.Name == defaultRoomName
+                    || r.Name.EndsWith("Main Room")
+                    || r.Name.EndsWith("Collaboration Room"))
+                && r.WorkspacePath == activeWorkspace
+                && r.Id != defaultRoomId
+                    ? 0
+                    : (r.Id == defaultRoomId
+                        || r.Name == defaultRoomName
+                        || r.Name.EndsWith("Main Room")
+                        || r.Name.EndsWith("Collaboration Room")
+                        ? 1
+                        : 2))
             .ThenBy(r => r.Name)
+            .ThenBy(r => r.Id)
             .ToListAsync();
 
         var allLocations = await _db.AgentLocations.ToListAsync();

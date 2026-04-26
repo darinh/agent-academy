@@ -68,7 +68,7 @@ public sealed class InitializationServiceTests : IDisposable
         var snapshots = new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db));
         _roomService = new RoomService(
             _db, NullLogger<RoomService>.Instance,
-            _activity, messageService, snapshots, new PhaseTransitionValidator(_db));
+            _activity, messageService, snapshots, new PhaseTransitionValidator(_db), _catalog);
         _workspaceRoomService = new WorkspaceRoomService(
             _db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activity);
     }
