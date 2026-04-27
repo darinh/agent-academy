@@ -383,6 +383,67 @@ describe("ChatPanel (interactive)", () => {
       });
     });
 
+    it("returns focus to the textarea after sending via Enter", async () => {
+      const onSend = vi.fn(async () => true);
+      const { user } = renderChat({ onSendMessage: onSend });
+
+      const textarea = screen.getByRole("textbox", { name: /message to agents/i });
+      await user.type(textarea, "Hello agents{enter}");
+
+      await waitFor(() => {
+        expect(onSend).toHaveBeenCalled();
+      });
+      await waitFor(() => {
+        expect(textarea).toHaveFocus();
+      });
+    });
+
+    it("returns focus to the textarea after sending via Send button", async () => {
+      const onSend = vi.fn(async () => true);
+      const { user } = renderChat({ onSendMessage: onSend });
+
+      const textarea = screen.getByRole("textbox", { name: /message to agents/i });
+      await user.type(textarea, "Click send");
+      const sendBtn = screen.getByRole("button", { name: /send message/i });
+      await user.click(sendBtn);
+
+      await waitFor(() => {
+        expect(onSend).toHaveBeenCalled();
+      });
+      await waitFor(() => {
+        expect(textarea).toHaveFocus();
+      });
+    });
+
+    it("does not steal focus if the user clicks elsewhere while the send is in flight", async () => {
+      // onSend resolves only when we say so, so we can move focus mid-send.
+      let resolveSend: ((v: boolean) => void) | null = null;
+      const onSend = vi.fn(() => new Promise<boolean>((res) => { resolveSend = res; }));
+      const { user } = renderChat({ onSendMessage: onSend });
+
+      const textarea = screen.getByRole("textbox", { name: /message to agents/i });
+      await user.type(textarea, "hello{enter}");
+
+      // Render an unrelated focusable element OUTSIDE the composer (simulates
+      // the user clicking the sidebar / a different room / etc.) and focus it.
+      const outside = document.createElement("button");
+      outside.textContent = "outside";
+      document.body.appendChild(outside);
+      outside.focus();
+      expect(outside).toHaveFocus();
+
+      // Now finish the send.
+      resolveSend?.(true);
+      await waitFor(() => {
+        expect(onSend).toHaveBeenCalled();
+      });
+      // Give the refocus effect a chance to run.
+      await new Promise((r) => setTimeout(r, 20));
+      expect(textarea).not.toHaveFocus();
+      expect(outside).toHaveFocus();
+      outside.remove();
+    });
+
     it("disables Send button when textarea is empty", () => {
       renderChat();
       const sendBtn = screen.getByRole("button", { name: /send message/i });
