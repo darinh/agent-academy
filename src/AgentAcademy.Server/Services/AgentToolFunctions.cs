@@ -186,17 +186,24 @@ public sealed class AgentToolFunctions : IAgentToolFunctions
     /// These tools write files to the project directory and are scoped to the
     /// calling agent. Only agents with <c>code-write</c> in their
     /// <c>EnabledTools</c> (typically SoftwareEngineer role) receive these tools.
+    /// Writes are permitted under <c>src/</c> (production code) and <c>tests/</c>
+    /// (test fixtures and assertions that ship alongside production changes).
     /// When <paramref name="workspacePath"/> is provided the wrapper writes and
     /// commits inside that worktree instead of the develop checkout.
     /// </summary>
     public IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null, string? workspacePath = null)
     {
-        var wrapper = new CodeWriteToolWrapper(_scopeFactory, _logger, agentId, agentName, gitIdentity, roomId, scopeRoot: workspacePath);
+        var wrapper = new CodeWriteToolWrapper(
+            _scopeFactory, _logger, agentId, agentName, gitIdentity, roomId,
+            allowedRoots: new[] { "src", "tests" },
+            protectedPaths: CodeWriteToolWrapper.CodeWriteProtectedPaths,
+            scopeRoot: workspacePath,
+            requireWorktree: true);
         return
         [
             AIFunctionFactory.Create(wrapper.WriteFileAsync, "write_file",
                 "Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
-                "The file is automatically staged for commit. Paths must be within src/ and relative to the project root."),
+                "The file is automatically staged for commit. Paths must be within src/ or tests/ and relative to the project root."),
             AIFunctionFactory.Create(wrapper.CommitChangesAsync, "commit_changes",
                 "Commit all staged changes with a conventional commit message. Use after write_file to persist your changes. " +
                 "Returns the commit SHA on success."),
