@@ -51,6 +51,8 @@ const ChatPanel = memo(function ChatPanel(props: {
 }) {
   const s = useChatStyles();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const refocusComposerRef = useRef(false);
   const [humanMsg, setHumanMsg] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -306,6 +308,14 @@ const ChatPanel = memo(function ChatPanel(props: {
     const rid = room?.id;
     const content = humanMsg.trim();
     if (!rid || !content) return;
+    // Only restore composer focus if the user was already in the composer
+    // (textarea or Send button) when they triggered the send. If they clicked
+    // elsewhere during the in-flight send, don't yank focus back.
+    const ta = textareaRef.current;
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    const composerHadFocus =
+      !!ta && !!active && (active === ta || ta.parentElement?.contains(active) === true ||
+        (active instanceof HTMLElement && active.closest('[data-composer="1"]') !== null));
     setSending(true);
     try {
       const sent = await onSendMessage(rid, content);
@@ -313,10 +323,31 @@ const ChatPanel = memo(function ChatPanel(props: {
         clearChatDraft(rid);
         setHumanMsg("");
       }
+      if (composerHadFocus) refocusComposerRef.current = true;
     } finally {
       setSending(false);
     }
   }, [humanMsg, onSendMessage, room?.id]);
+
+  // After a send completes, the Textarea was briefly disabled (which blurs
+  // it). Restore focus once it's re-enabled — but only if the user hasn't
+  // moved focus to something OUTSIDE the composer (e.g., switched rooms,
+  // clicked the sidebar) during the in-flight send.
+  useEffect(() => {
+    if (sending || !refocusComposerRef.current) return;
+    refocusComposerRef.current = false;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    const composerShell = ta.closest('[data-composer="1"]');
+    const focusedOutsideComposer =
+      active != null &&
+      active !== document.body &&
+      composerShell != null &&
+      !composerShell.contains(active);
+    if (focusedOutsideComposer) return;
+    ta.focus();
+  }, [sending]);
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -480,7 +511,7 @@ const ChatPanel = memo(function ChatPanel(props: {
       )}
 
       {room && !readOnly && (
-        <div className={s.composerShell}>
+        <div className={s.composerShell} data-composer="1">
           <div className={s.composerLabel}>Message the team</div>
           <Textarea
             className={s.composerField}
@@ -493,6 +524,7 @@ const ChatPanel = memo(function ChatPanel(props: {
             rows={3}
             disabled={sending}
             aria-label="Message to agents"
+            textarea={{ ref: textareaRef }}
           />
           <div className={s.composerActions}>
             <span style={{ fontSize: "11px", color: "var(--aa-muted)", marginRight: "auto" }}>
