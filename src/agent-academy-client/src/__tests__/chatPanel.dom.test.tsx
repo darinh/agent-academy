@@ -417,8 +417,11 @@ describe("ChatPanel (interactive)", () => {
 
     it("does not steal focus if the user clicks elsewhere while the send is in flight", async () => {
       // onSend resolves only when we say so, so we can move focus mid-send.
-      let resolveSend: ((v: boolean) => void) | null = null;
-      const onSend = vi.fn(() => new Promise<boolean>((res) => { resolveSend = res; }));
+      // Wrap the resolver in an object so TS doesn't narrow the variable to
+      // `null` based on its initializer (control-flow analysis ignores the
+      // assignment that happens inside the Promise executor closure).
+      const resolver: { fn: ((v: boolean) => void) | null } = { fn: null };
+      const onSend = vi.fn(() => new Promise<boolean>((res) => { resolver.fn = res; }));
       const { user } = renderChat({ onSendMessage: onSend });
 
       const textarea = screen.getByRole("textbox", { name: /message to agents/i });
@@ -433,7 +436,7 @@ describe("ChatPanel (interactive)", () => {
       expect(outside).toHaveFocus();
 
       // Now finish the send.
-      resolveSend?.(true);
+      resolver.fn?.(true);
       await waitFor(() => {
         expect(onSend).toHaveBeenCalled();
       });
