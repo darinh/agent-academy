@@ -103,4 +103,73 @@ internal static class ScopeRootValidator
             return null;
         }
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="canonicalScopeRoot"/> is a linked
+    /// git worktree (i.e., NOT the main checkout). Used by P1.9 blocker D
+    /// enforcement: code-write tools refuse to operate against the main develop
+    /// checkout because parallel-task work would contaminate it.
+    /// </summary>
+    /// <remarks>
+    /// Detection compares <c>git rev-parse --git-dir</c> with
+    /// <c>git rev-parse --git-common-dir</c>: in the main checkout the two
+    /// resolve to the same path; in a linked worktree, <c>--git-dir</c> points
+    /// inside <c>--git-common-dir/worktrees/{name}/</c>. This is the
+    /// authoritative check git itself uses to distinguish main vs. linked
+    /// worktrees, and is robust to repos that happen to live under a directory
+    /// containing the substring <c>worktrees</c> (a substring-only check would
+    /// misclassify <c>/home/x/worktrees/myrepo/.git</c> as a linked worktree).
+    /// When git is unavailable or rev-parse fails, returns <c>null</c> so callers
+    /// can choose their fallback (typically: fail-closed under
+    /// <c>requireWorktree</c> to avoid silently re-introducing the contamination).
+    /// </remarks>
+    public static bool? IsLinkedWorktree(string canonicalScopeRoot)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalScopeRoot)) return null;
+
+        var gitDir = RunGitDir(canonicalScopeRoot);
+        if (gitDir is null) return null;
+
+        var commonDir = RunGitCommonDir(canonicalScopeRoot);
+        if (commonDir is null) return null;
+
+        // Strip trailing separators so the comparison treats `.../X` and
+        // `.../X/` as identical regardless of how the two `git rev-parse`
+        // invocations chose to render them.
+        var normalizedDir = gitDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedCommon = commonDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        // Main checkout: --git-dir == --git-common-dir (same physical .git).
+        // Linked worktree: --git-dir is the per-worktree pointer dir
+        // (.git/worktrees/{name}); --git-common-dir is the shared .git itself.
+        return !string.Equals(normalizedDir, normalizedCommon, StringComparison.Ordinal);
+    }
+
+    private static string? RunGitDir(string workingDir)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                WorkingDirectory = workingDir,
+            };
+            psi.ArgumentList.Add("rev-parse");
+            psi.ArgumentList.Add("--git-dir");
+            using var p = Process.Start(psi);
+            if (p is null) return null;
+            var stdout = p.StandardOutput.ReadToEnd().Trim();
+            p.WaitForExit(2000);
+            if (p.ExitCode != 0 || string.IsNullOrEmpty(stdout)) return null;
+            var resolved = Path.IsPathRooted(stdout) ? stdout : Path.GetFullPath(Path.Combine(workingDir, stdout));
+            return Path.GetFullPath(resolved);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

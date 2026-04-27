@@ -59,6 +59,21 @@ public sealed class CommitChangesHandler : ICommandHandler
             };
         }
 
+        // P1.9 blocker D: refuse to commit against the develop checkout.
+        // The structured COMMIT_CHANGES path mirrors the SDK write_file/commit_changes
+        // wrappers — without this guard, an agent in the main room could route around
+        // the wrapper-level refusal by emitting a structured command instead.
+        var worktreeRefusal = TryRefuseMainCheckoutCommit(context.WorkingDirectory);
+        if (worktreeRefusal is not null)
+        {
+            return command with
+            {
+                Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
+                Error = worktreeRefusal
+            };
+        }
+
         try
         {
             string commitSha;
@@ -121,4 +136,41 @@ public sealed class CommitChangesHandler : ICommandHandler
         args.TryGetValue(key, out var value) && value is string text
             ? text.Trim()
             : null;
+
+    /// <summary>
+    /// P1.9 blocker D: refuses COMMIT_CHANGES when the working directory is
+    /// missing or is the main develop checkout (rather than a per-task linked
+    /// git worktree). Returns null when the commit may proceed; returns a
+    /// user-facing refusal string otherwise. Mirrors
+    /// <c>CodeWriteToolWrapper.TryRefuseMainCheckoutWrite</c>.
+    /// </summary>
+    /// <remarks>
+    /// Codex review caught the gap: the orchestrator's per-agent workspace
+    /// resolver falls back to <c>roomWorkspacePath</c> (= the develop checkout)
+    /// when the agent has no claimed task. Without classifying the supplied
+    /// directory we'd commit there silently. Fail-closed when classification
+    /// is unavailable to avoid silently re-introducing the contamination.
+    /// </remarks>
+    private static string? TryRefuseMainCheckoutCommit(string? workingDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(workingDirectory))
+            return "Cannot commit_changes from the develop checkout. " +
+                   "Call CLAIM_TASK <taskId> first to provision a per-task worktree, " +
+                   "then retry on your next turn. (P1.9 blocker D enforcement.)";
+
+        var classification = ScopeRootValidator.IsLinkedWorktree(workingDirectory);
+        if (classification == false)
+            return "Cannot commit_changes from the develop checkout (cwd=" + workingDirectory + "). " +
+                   "Call CLAIM_TASK <taskId> first to provision a per-task worktree, " +
+                   "then retry on your next turn. (P1.9 blocker D enforcement.)";
+
+        if (classification is null)
+            return "commit_changes could not verify the working directory is a per-task worktree " +
+                   "(git classification unavailable for cwd=" + workingDirectory + "). " +
+                   "Refusing rather than risking commits to the develop checkout. " +
+                   "Call CLAIM_TASK <taskId> first to provision a per-task worktree, then retry.";
+
+        // classification == true (linked worktree) → allow
+        return null;
+    }
 }

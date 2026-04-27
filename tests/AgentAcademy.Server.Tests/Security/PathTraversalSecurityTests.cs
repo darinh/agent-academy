@@ -341,6 +341,10 @@ public sealed class PathTraversalSecurityTests : IDisposable
 
         return new CodeWriteToolWrapper(
             scopeFactory, NullLogger.Instance,
-            "test-agent", "Tester");
+            "test-agent", "Tester",
+            // Path-traversal and protected-path security tests assert the
+            // wrapper's input handling against the develop checkout root.
+            // P1.9 blocker D's worktree gate is verified in WorktreeIsolationTests.
+            requireWorktree: false);
     }
 }

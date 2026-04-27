@@ -153,6 +153,16 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             // path internally), so this only fires on real DB errors.
             var roomWorkspacePath = await roomService.GetWorkspacePathForRoomAsync(roomId);
 
+            // P1.9 blocker D: per-agent workspace resolver. When an agent has a
+            // currently-claimed in-flight task with a worktree, route them into
+            // that worktree so write_file/commit_changes target the worktree
+            // rather than contaminating the develop checkout. Resolved in this
+            // scope so the resolver shares the round's DbContext. Optional so
+            // unit tests that only stub the round-runner DI can still run; in
+            // that case the per-agent override degrades to the room workspace
+            // path (matching pre-P1.9-blocker-D behaviour).
+            var workspaceResolver = scope.ServiceProvider.GetService<IAgentWorkspaceResolver>();
+
             // ── Planner phase ──
             var planner = FindPlanner();
             if (planner is not null)
@@ -180,10 +190,14 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                     + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
                     + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
 
+                var plannerWorkspacePath = workspaceResolver is not null
+                    ? await workspaceResolver.ResolveAsync(planner.Id, roomId, roomWorkspacePath)
+                    : roomWorkspacePath;
+
                 var plannerResult = await _turnRunner.RunAgentTurnAsync(
                     planner, scope, messageService, configService, activity,
                     freshRoom, roomId, ctx.SpecContext, taskItems, ctx.SessionSummary, ctx.SprintPreamble, plannerSuffix, ctx.SpecVersion,
-                    sprintIdAtRunStart, roomWorkspacePath, cancellationToken);
+                    sprintIdAtRunStart, plannerWorkspacePath, cancellationToken);
 
                 if (plannerResult.IsNonPass)
                 {
@@ -218,11 +232,15 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                 var location = await agentLocationService.GetAgentLocationAsync(catalogAgent.Id);
                 if (location?.State == AgentState.Working) continue;
 
+                var agentWorkspacePath = workspaceResolver is not null
+                    ? await workspaceResolver.ResolveAsync(catalogAgent.Id, roomId, roomWorkspacePath)
+                    : roomWorkspacePath;
+
                 var result = await _turnRunner.RunAgentTurnAsync(
                     catalogAgent, scope, messageService, configService, activity,
                     currentRoom, roomId, ctx.SpecContext,
                     sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion,
-                    sprintId: sprintIdAtRunStart, workspacePath: roomWorkspacePath, cancellationToken: cancellationToken);
+                    sprintId: sprintIdAtRunStart, workspacePath: agentWorkspacePath, cancellationToken: cancellationToken);
 
                 if (result.IsNonPass) hadNonPassResponse = true;
             }

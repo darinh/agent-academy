@@ -23,6 +23,13 @@ public sealed class CommitChangesTests : IDisposable
     private readonly GitService _gitService;
     private readonly CommitChangesHandler _handler;
     private readonly string _repoRoot;
+    /// <summary>
+    /// Linked git worktree off <see cref="_repoRoot"/>. P1.9 blocker D refuses
+    /// COMMIT_CHANGES when the working directory is not a linked worktree, so
+    /// tests run their commits from a worktree (mirroring the production path
+    /// where the orchestrator routes the agent into a per-task worktree).
+    /// </summary>
+    private readonly string _worktreePath;
 
     public CommitChangesTests()
     {
@@ -32,6 +39,13 @@ public sealed class CommitChangesTests : IDisposable
         _repoRoot = Path.Combine(Path.GetTempPath(), $"agent-academy-commit-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_repoRoot);
         InitializeRepository(_repoRoot);
+
+        // P1.9 blocker D: production routes commits through a per-task worktree;
+        // the handler refuses commits against the main checkout. Provision a
+        // worktree off the test repo so the existing tests exercise the same
+        // shape as production.
+        _worktreePath = Path.Combine(Path.GetTempPath(), $"agent-academy-commit-wt-{Guid.NewGuid():N}");
+        RunGit(_repoRoot, "worktree", "add", "-b", "task/test-worktree", _worktreePath);
 
         _catalog = new AgentCatalogOptions(
             DefaultRoomId: "main",
@@ -136,6 +150,11 @@ public sealed class CommitChangesTests : IDisposable
     {
         _serviceProvider.Dispose();
         _connection.Dispose();
+        // Remove the worktree first so its `.git` pointer doesn't leak orphaned
+        // references in the main repo's `worktrees/` admin directory.
+        try { RunGit(_repoRoot, "worktree", "remove", "--force", _worktreePath); } catch { /* best effort */ }
+        if (Directory.Exists(_worktreePath))
+            Directory.Delete(_worktreePath, recursive: true);
         if (Directory.Exists(_repoRoot))
             Directory.Delete(_repoRoot, recursive: true);
     }
@@ -149,8 +168,8 @@ public sealed class CommitChangesTests : IDisposable
     [Fact]
     public async Task CommitChanges_WithStagedFiles_Succeeds()
     {
-        File.WriteAllText(Path.Combine(_repoRoot, "newfile.cs"), "public class Foo {}\n");
-        RunGit(_repoRoot, "add", "newfile.cs");
+        File.WriteAllText(Path.Combine(_worktreePath, "newfile.cs"), "public class Foo {}\n");
+        RunGit(_worktreePath, "add", "newfile.cs");
 
         var (command, context) = MakeCommand(
             new Dictionary<string, object?> { ["message"] = "feat: add Foo class" },
@@ -160,14 +179,14 @@ public sealed class CommitChangesTests : IDisposable
 
         Assert.Equal(CommandStatus.Success, result.Status);
         Assert.False(string.IsNullOrWhiteSpace(result.Result!["commitSha"]?.ToString()));
-        Assert.Equal("feat: add Foo class", RunGit(_repoRoot, "log", "-1", "--pretty=%s"));
+        Assert.Equal("feat: add Foo class", RunGit(_worktreePath, "log", "-1", "--pretty=%s"));
     }
 
     [Fact]
     public async Task CommitChanges_WithValueArg_Succeeds()
     {
-        File.WriteAllText(Path.Combine(_repoRoot, "inline.cs"), "public class Bar {}\n");
-        RunGit(_repoRoot, "add", "inline.cs");
+        File.WriteAllText(Path.Combine(_worktreePath, "inline.cs"), "public class Bar {}\n");
+        RunGit(_worktreePath, "add", "inline.cs");
 
         var (command, context) = MakeCommand(
             new Dictionary<string, object?> { ["value"] = "fix: inline value arg" },
@@ -176,7 +195,7 @@ public sealed class CommitChangesTests : IDisposable
         var result = await _handler.ExecuteAsync(command, context);
 
         Assert.Equal(CommandStatus.Success, result.Status);
-        Assert.Equal("fix: inline value arg", RunGit(_repoRoot, "log", "-1", "--pretty=%s"));
+        Assert.Equal("fix: inline value arg", RunGit(_worktreePath, "log", "-1", "--pretty=%s"));
     }
 
     [Fact]
@@ -234,11 +253,42 @@ public sealed class CommitChangesTests : IDisposable
         Assert.Equal(CommandStatus.Error, result.Status);
     }
 
+    /// <summary>
+    /// P1.9 blocker D: when no per-task working directory is supplied
+    /// (the develop-checkout-fallback path that the orchestrator uses
+    /// before the agent has a claimed task), COMMIT_CHANGES must refuse
+    /// rather than silently committing to the develop checkout.
+    /// </summary>
+    [Fact]
+    public async Task CommitChanges_NoWorkingDirectory_RefusesWithClaimTaskHint()
+    {
+        File.WriteAllText(Path.Combine(_worktreePath, "blocked.cs"), "// would have been committed\n");
+        RunGit(_worktreePath, "add", "blocked.cs");
+
+        var scope = _serviceProvider.CreateScope();
+        var envelope = MakeEnvelope(
+            new Dictionary<string, object?> { ["message"] = "feat: should be refused" },
+            "engineer-1");
+        // WorkingDirectory deliberately null — the pre-fix behaviour committed
+        // against the GitService's main checkout. The fix turns that into a
+        // user-visible refusal that names CLAIM_TASK as the next step.
+        var context = new CommandContext(
+            "engineer-1", "Hephaestus", "SoftwareEngineer", "main", null,
+            scope.ServiceProvider, GitIdentity: null, WorkingDirectory: null);
+
+        var result = await _handler.ExecuteAsync(envelope, context);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("CLAIM_TASK", result.Error!);
+        Assert.Contains("commit_changes", result.Error!);
+    }
+
     [Fact]
     public async Task CommitChanges_UsesGitIdentity()
     {
-        File.WriteAllText(Path.Combine(_repoRoot, "identity.cs"), "// authored by agent\n");
-        RunGit(_repoRoot, "add", "identity.cs");
+        File.WriteAllText(Path.Combine(_worktreePath, "identity.cs"), "// authored by agent\n");
+        RunGit(_worktreePath, "add", "identity.cs");
 
         var gitIdentity = new AgentGitIdentity("Hephaestus (SoftwareEngineer)", "hephaestus@agent-academy.local");
 
@@ -246,21 +296,21 @@ public sealed class CommitChangesTests : IDisposable
         var envelope = MakeEnvelope(
             new Dictionary<string, object?> { ["message"] = "feat: agent-authored commit" },
             "engineer-1");
-        var context = new CommandContext("engineer-1", "Hephaestus", "SoftwareEngineer", "main", null, scope.ServiceProvider, gitIdentity);
+        var context = new CommandContext("engineer-1", "Hephaestus", "SoftwareEngineer", "main", null, scope.ServiceProvider, gitIdentity, WorkingDirectory: _worktreePath);
 
         var result = await _handler.ExecuteAsync(envelope, context);
 
         Assert.Equal(CommandStatus.Success, result.Status);
-        Assert.Equal("Hephaestus (SoftwareEngineer)", RunGit(_repoRoot, "log", "-1", "--pretty=%an"));
-        Assert.Equal("hephaestus@agent-academy.local", RunGit(_repoRoot, "log", "-1", "--pretty=%ae"));
+        Assert.Equal("Hephaestus (SoftwareEngineer)", RunGit(_worktreePath, "log", "-1", "--pretty=%an"));
+        Assert.Equal("hephaestus@agent-academy.local", RunGit(_worktreePath, "log", "-1", "--pretty=%ae"));
     }
 
     [Fact]
     public async Task CommitChanges_AnyRole_Allowed()
     {
         // Verify planners can also use COMMIT_CHANGES
-        File.WriteAllText(Path.Combine(_repoRoot, "planner.txt"), "planner commit\n");
-        RunGit(_repoRoot, "add", "planner.txt");
+        File.WriteAllText(Path.Combine(_worktreePath, "planner.txt"), "planner commit\n");
+        RunGit(_worktreePath, "add", "planner.txt");
 
         var (command, context) = MakeCommand(
             new Dictionary<string, object?> { ["message"] = "docs: planner update" },
@@ -334,7 +384,11 @@ public sealed class CommitChangesTests : IDisposable
     {
         var scope = _serviceProvider.CreateScope();
         var envelope = MakeEnvelope(args, agentId);
-        var context = new CommandContext(agentId, agentName, role, "main", null, scope.ServiceProvider);
+        // Pass _worktreePath as WorkingDirectory so the P1.9-blocker-D refusal
+        // (which rejects null WorkingDirectory) doesn't fire. The handler
+        // routes through CommitInDirAsync, which is the production path
+        // when an orchestrator-supplied per-agent worktree is in scope.
+        var context = new CommandContext(agentId, agentName, role, "main", null, scope.ServiceProvider, GitIdentity: null, WorkingDirectory: _worktreePath);
         return (envelope, context);
     }
 

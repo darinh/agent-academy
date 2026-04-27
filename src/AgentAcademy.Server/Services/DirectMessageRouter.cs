@@ -101,11 +101,22 @@ public sealed class DirectMessageRouter : IDirectMessageRouter
         // P1.9 blocker B regression). "No workspace" returns null naturally.
         var roomWorkspacePath = await roomService.GetWorkspacePathForRoomAsync(roomId);
 
+        // P1.9 blocker D: route through the per-agent workspace resolver so DM
+        // turns honour the agent's claimed-task worktree (matches the rule used
+        // by ConversationRoundRunner). Without this, an agent receiving a DM
+        // mid-task would write to the room workspace (= develop) instead of
+        // their worktree. Optional resolution mirrors ConversationRoundRunner so
+        // unit tests with minimal DI continue to work.
+        var workspaceResolver = scope.ServiceProvider.GetService<IAgentWorkspaceResolver>();
+        var agentWorkspacePath = workspaceResolver is not null
+            ? await workspaceResolver.ResolveAsync(agent.Id, roomId, roomWorkspacePath)
+            : roomWorkspacePath;
+
         await _turnRunner.RunAgentTurnAsync(
             catalogAgent, scope, messageService, configService, activity,
             room, roomId, ctx.SpecContext,
             sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion,
-            workspacePath: roomWorkspacePath);
+            workspacePath: agentWorkspacePath);
 
         _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
     }
