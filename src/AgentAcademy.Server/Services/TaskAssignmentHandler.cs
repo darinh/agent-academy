@@ -139,8 +139,20 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
 
             await _gitService.ReturnToDevelopAsync(taskBranch);
 
-            // Create a worktree for isolated work when a workspace is available
-            var workspacePath = await roomService.GetActiveWorkspacePathAsync();
+            // Create a worktree for isolated work when the parent room is bound
+            // to a workspace. We use ROOM-SCOPED lookup, not the global "active
+            // workspace" pointer: tasks are always assigned in a room context,
+            // and a room can have a workspace even when no workspace is globally
+            // active (e.g. fresh server start, or a single-room operator setup).
+            // If we used GetActiveWorkspacePathAsync() here and it returned null,
+            // no worktree would be created — and then `worktreePath = null` flows
+            // down through BreakoutLifecycleService → CodeWriteToolWrapper, which
+            // falls back to the develop checkout for both writes AND commits
+            // (this is exactly the P1.9 blocker B regression observed in
+            // Sprint #11: Hephaestus's write_file calls and commit_changes
+            // landed on develop instead of the assigned task worktree, because
+            // no global workspace was active).
+            var workspacePath = await roomService.GetWorkspacePathForRoomAsync(roomId);
             if (workspacePath is not null && taskBranch is not null)
             {
                 try

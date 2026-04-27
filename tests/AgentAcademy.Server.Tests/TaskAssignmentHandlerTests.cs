@@ -270,6 +270,78 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
         Assert.Contains("Coverage > 80%", tasks[0].Description);
     }
 
+    // ──────────────── WORKTREE PROVISIONING (P1.9 BLOCKER B REGRESSION) ────────────────
+
+    /// <summary>
+    /// Regression test for P1.9 blocker B (Sprint #11): when the parent room
+    /// has a WorkspacePath set but NO workspace is globally active
+    /// (the operator's actual setup — fresh server, no SetActive call), the
+    /// handler used to call <c>GetActiveWorkspacePathAsync()</c> which returned
+    /// null, skipping worktree creation. The breakout then ran without a
+    /// worktree, all writes/commits fell through to the develop checkout, and
+    /// the Sprint #11 task ended up committing on develop instead of its
+    /// assigned branch. Fixed by switching to <c>GetWorkspacePathForRoomAsync(roomId)</c>.
+    /// </summary>
+    [Fact]
+    public async Task ProcessAssignment_CreatesWorktree_WhenRoomHasWorkspacePath_AndNoGlobalActiveWorkspace()
+    {
+        using var scope = _provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        // Room is bound to the test repo as its workspace…
+        db.Rooms.Add(new RoomEntity
+        {
+            Id = "main",
+            Name = "Main Room",
+            Status = "Active",
+            CreatedAt = DateTime.UtcNow,
+            WorkspacePath = _repoRoot
+        });
+        // …but NO Workspace row exists with IsActive=true. This mirrors the
+        // operator's actual setup at the time of Sprint #11.
+        await db.SaveChangesAsync();
+
+        var assignment = MakeAssignment("Hephaestus", "Build version endpoint", TaskType.Feature);
+
+        await _handler.ProcessAssignmentAsync(scope, Planner, "main", assignment);
+
+        // Assignment should have created a breakout (the regression let this happen too)…
+        var breakouts = await db.BreakoutRooms.ToListAsync();
+        Assert.Single(breakouts);
+
+        // …AND a worktree must exist on disk for the new task branch.
+        // The pre-fix code skipped this entirely because GetActiveWorkspacePathAsync
+        // returned null.
+        var worktreesRoot = Path.Combine(_repoRoot, ".worktrees");
+        Assert.True(
+            Directory.Exists(worktreesRoot),
+            $"Expected worktrees directory at {worktreesRoot} but none was created. " +
+            "This means TaskAssignmentHandler skipped worktree provisioning — " +
+            "the exact P1.9 blocker B regression that caused Sprint #11 to commit on develop.");
+
+        var createdWorktrees = Directory.GetDirectories(worktreesRoot);
+        Assert.NotEmpty(createdWorktrees);
+    }
+
+    [Fact]
+    public async Task ProcessAssignment_NoWorktree_WhenRoomHasNoWorkspacePath()
+    {
+        // Companion check: when the room genuinely has no workspace, no worktree
+        // should be created — preserves G5 from the design (main-room-only setups).
+        using var scope = _provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await CreateRoomAsync(db, "main");
+
+        var assignment = MakeAssignment("Hephaestus", "Some task", TaskType.Feature);
+
+        await _handler.ProcessAssignmentAsync(scope, Planner, "main", assignment);
+
+        var worktreesRoot = Path.Combine(_repoRoot, ".worktrees");
+        Assert.False(
+            Directory.Exists(worktreesRoot) && Directory.GetDirectories(worktreesRoot).Length > 0,
+            "Worktree should NOT be created when the room has no WorkspacePath");
+    }
+
     // ──────────────── HELPERS ────────────────
 
     private static ParsedTaskAssignment MakeAssignment(string agent, string title, TaskType type)

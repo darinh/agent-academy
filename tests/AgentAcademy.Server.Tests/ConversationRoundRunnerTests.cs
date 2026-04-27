@@ -80,7 +80,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
             Arg.Any<IActivityPublisher>(), Arg.Any<RoomSnapshot>(),
             Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<List<TaskItem>?>(),
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(),
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var agent = callInfo.Arg<AgentDefinition>();
@@ -146,7 +146,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
     }
 
     private async Task SeedRoomAsync(string roomId = "main", string name = "Main Room",
-        string status = "Active", bool withActiveTask = false)
+        string status = "Active", bool withActiveTask = false, string? workspacePath = null)
     {
         using var db = CreateDb();
         db.Rooms.Add(new RoomEntity
@@ -155,6 +155,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
             Name = name,
             Status = status,
             Topic = "",
+            WorkspacePath = workspacePath,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -216,7 +217,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
             Arg.Any<IActivityPublisher>(), Arg.Any<RoomSnapshot>(),
             Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<List<TaskItem>?>(),
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(),
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var agent = callInfo.Arg<AgentDefinition>();
@@ -625,6 +626,72 @@ public sealed class ConversationRoundRunnerTests : IDisposable
         var outcome = await _runner.RunRoundsAsync("main");
 
         Assert.Equal(1, outcome.InnerRoundsExecuted);
+    }
+
+    /// <summary>
+    /// P1.9 blocker B upstream wiring: when the room has a WorkspacePath,
+    /// it MUST be passed as the workspacePath argument to the turn runner so
+    /// the SDK tool wrappers (write_file, commit_changes, read_file,
+    /// search_code) and structured-command handlers operate against that
+    /// workspace's checkout. Without this thread, PR #169's wrapper-layer
+    /// fix is silently inert in conversation rounds — every tool call
+    /// resolves to FindProjectRoot()=develop checkout regardless of room.
+    /// </summary>
+    [Fact]
+    public async Task RunRoundsAsync_PassesRoomWorkspacePath_ToTurnRunner()
+    {
+        const string workspace = "/tmp/threading-test-ws";
+        await SeedRoomWithWorkspaceAsync("main", workspace);
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        string? capturedWorkspacePath = "<not-called>";
+        // Re-stub on top of the default to capture argument 14 (workspacePath).
+        _turnRunner.RunAgentTurnAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<IServiceScope>(),
+            Arg.Any<IMessageService>(), Arg.Any<IAgentConfigService>(),
+            Arg.Any<IActivityPublisher>(), Arg.Any<RoomSnapshot>(),
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<List<TaskItem>?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedWorkspacePath = callInfo.ArgAt<string?>(14);
+                var agent = callInfo.Arg<AgentDefinition>();
+                return new AgentTurnResult(agent, "PASS", IsNonPass: false);
+            });
+
+        await _runner.RunRoundsAsync("main");
+
+        Assert.Equal(workspace, capturedWorkspacePath);
+    }
+
+    [Fact]
+    public async Task RunRoundsAsync_RoomWithoutWorkspacePath_PassesNull_ToTurnRunner()
+    {
+        // Preserves G5 from the design: rooms with no workspace get null
+        // workspacePath, so tools fall back to FindProjectRoot()=develop —
+        // the existing pre-isolation behaviour for main-room-only setups.
+        await SeedRoomAsync(withActiveTask: true);
+        await SeedAgentLocationAsync("engineer-1", "main");
+
+        string? capturedWorkspacePath = "<sentinel>";
+        _turnRunner.RunAgentTurnAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<IServiceScope>(),
+            Arg.Any<IMessageService>(), Arg.Any<IAgentConfigService>(),
+            Arg.Any<IActivityPublisher>(), Arg.Any<RoomSnapshot>(),
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<List<TaskItem>?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedWorkspacePath = callInfo.ArgAt<string?>(14);
+                var agent = callInfo.Arg<AgentDefinition>();
+                return new AgentTurnResult(agent, "PASS", IsNonPass: false);
+            });
+
+        await _runner.RunRoundsAsync("main");
+
+        Assert.Null(capturedWorkspacePath);
     }
 
     [Fact]
