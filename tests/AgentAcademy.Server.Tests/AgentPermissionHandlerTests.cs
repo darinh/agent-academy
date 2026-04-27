@@ -434,4 +434,372 @@ public sealed class AgentPermissionHandlerTests
 
         Assert.Equal(PermissionRequestResultKind.DeniedByRules, result.Kind);
     }
+
+    // ── DescribeRequest ─────────────────────────────────────────
+    //
+    // These tests pin the diagnostic format the handler emits when it denies
+    // a request. The format is what makes ad-hoc log scraping (grep/jq) work
+    // when triaging an agent that's hitting a permission wall.
+
+    private static PermissionRequestShell MakeShell(
+        string? toolCallId = null,
+        string fullCommandText = "",
+        string intention = "",
+        bool hasWriteFileRedirection = false,
+        PermissionRequestShellCommandsItem[]? commands = null) =>
+        new()
+        {
+            Kind = "shell",
+            ToolCallId = toolCallId!,
+            FullCommandText = fullCommandText,
+            Intention = intention,
+            Commands = commands ?? Array.Empty<PermissionRequestShellCommandsItem>(),
+            PossiblePaths = Array.Empty<string>(),
+            PossibleUrls = Array.Empty<PermissionRequestShellPossibleUrlsItem>(),
+            HasWriteFileRedirection = hasWriteFileRedirection,
+            CanOfferSessionApproval = false,
+            Warning = string.Empty,
+        };
+
+    private static PermissionRequestWrite MakeWrite(
+        string? toolCallId = null,
+        string? fileName = null,
+        string? diff = null,
+        string intention = "") =>
+        new()
+        {
+            Kind = "write",
+            ToolCallId = toolCallId!,
+            FileName = fileName!,
+            Diff = diff!,
+            NewFileContents = string.Empty,
+            Intention = intention,
+        };
+
+    private static PermissionRequestUrl MakeUrl(string? url = null, string intention = "") =>
+        new()
+        {
+            Kind = "url",
+            ToolCallId = null!,
+            Url = url!,
+            Intention = intention,
+        };
+
+    private static PermissionRequestMcp MakeMcp(
+        string? serverName = null,
+        string? toolName = null,
+        bool readOnly = false) =>
+        new()
+        {
+            Kind = "mcp",
+            ToolCallId = null!,
+            ServerName = serverName!,
+            ToolName = toolName!,
+            ToolTitle = string.Empty,
+            Args = new object(),
+            ReadOnly = readOnly,
+        };
+
+    private static PermissionRequestRead MakeRead(string? path = null, string intention = "") =>
+        new()
+        {
+            Kind = "read",
+            ToolCallId = null!,
+            Path = path!,
+            Intention = intention,
+        };
+
+    private static PermissionRequestMemory MakeMemory(string subject = "", string fact = "") =>
+        new()
+        {
+            Kind = "memory",
+            ToolCallId = null!,
+            Subject = subject,
+            Fact = fact,
+            Citations = string.Empty,
+        };
+
+    private static PermissionRequestCustomTool MakeCustomTool(string? toolName = null, string description = "") =>
+        new()
+        {
+            Kind = "custom-tool",
+            ToolCallId = null!,
+            ToolName = toolName!,
+            ToolDescription = description,
+            Args = new object(),
+        };
+
+    private static PermissionRequestHook MakeHook(string? toolName = null, string hookMessage = "") =>
+        new()
+        {
+            Kind = "hook",
+            ToolCallId = null!,
+            ToolName = toolName!,
+            ToolArgs = new object(),
+            HookMessage = hookMessage,
+        };
+
+    [Fact]
+    public void DescribeRequest_Shell_IncludesCommandIntentionAndCallId()
+    {
+        var req = MakeShell(
+            toolCallId: "tc-abc123",
+            fullCommandText: "git status --porcelain",
+            intention: "Check whether worktree is clean before committing",
+            hasWriteFileRedirection: false,
+            commands: new[]
+            {
+                new PermissionRequestShellCommandsItem { Identifier = "git", ReadOnly = true }
+            });
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("shell", detail);
+        Assert.Contains("tc-abc123", detail);
+        Assert.Contains("git status --porcelain", detail);
+        Assert.Contains("Check whether worktree is clean", detail);
+        Assert.Contains("has_write_redirect=False", detail);
+        Assert.Contains("cmd_count=1", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Shell_TruncatesLongFields()
+    {
+        var longCmd = new string('a', 500);
+        var req = MakeShell(fullCommandText: longCmd, intention: "x");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("…", detail);
+        Assert.True(detail.Length < 600, $"detail unexpectedly long: {detail.Length} chars");
+    }
+
+    [Fact]
+    public void DescribeRequest_Shell_StripsNewlines()
+    {
+        var req = MakeShell(fullCommandText: "line1\nline2\rline3", intention: "multi\nline");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.DoesNotContain('\n', detail);
+        Assert.DoesNotContain('\r', detail);
+        Assert.Contains("line1 line2 line3", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Write_IncludesFileNameAndDiffPresence()
+    {
+        var req = MakeWrite(
+            toolCallId: "tc-w1",
+            fileName: "src/Foo.cs",
+            diff: "@@ -1 +1 @@\n-old\n+new",
+            intention: "Update Foo");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("write", detail);
+        Assert.Contains("src/Foo.cs", detail);
+        Assert.Contains("has_diff=True", detail);
+        Assert.Contains("tc-w1", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Url_IncludesUrl()
+    {
+        var req = MakeUrl(url: "https://api.github.com/user", intention: "Probe auth");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("url", detail);
+        // RedactUrl strips path/query (defence in depth — query strings often
+        // carry tokens). Host alone is enough signal for triage.
+        Assert.Contains("api.github.com", detail);
+        Assert.Contains("Probe auth", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Mcp_IncludesServerAndTool()
+    {
+        var req = MakeMcp(serverName: "github", toolName: "create_pull_request", readOnly: false);
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("github", detail);
+        Assert.Contains("create_pull_request", detail);
+        Assert.Contains("read_only=False", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_BasePermissionRequest_FallsBack()
+    {
+        // The handler may receive the bare base type if a future SDK adds a
+        // new Kind without a subtype shipping yet. The fallback must not throw
+        // and must surface the type name so we can chase it in the SDK.
+        var req = new PermissionRequest { Kind = "future-kind" };
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("unrecognized subtype", detail);
+        Assert.Contains("PermissionRequest", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_NullFields_RenderAsEmptyOrNull()
+    {
+        // Defensive: SDK fields come in as empty/null. Description must not NRE.
+        var req = MakeShell();
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("(empty)", detail);
+        Assert.Contains("tool_call_id=(null)", detail);
+        Assert.Contains("cmd_count=0", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Read_IncludesPath()
+    {
+        var req = MakeRead(path: "src/Foo.cs", intention: "Inspect file");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("read", detail);
+        Assert.Contains("src/Foo.cs", detail);
+        Assert.Contains("Inspect file", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Memory_IncludesSubjectAndFact()
+    {
+        var req = MakeMemory(subject: "user-prefs", fact: "Prefers concise responses");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("memory", detail);
+        Assert.Contains("user-prefs", detail);
+        Assert.Contains("Prefers concise responses", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_CustomTool_IncludesToolNameAndDescription()
+    {
+        var req = MakeCustomTool(toolName: "create_pr", description: "Open a PR against develop");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("custom-tool", detail);
+        Assert.Contains("create_pr", detail);
+        Assert.Contains("Open a PR against develop", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Hook_IncludesToolNameAndHookMessage()
+    {
+        var req = MakeHook(toolName: "pre_tool_use", hookMessage: "Validate tool args");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.Contains("hook", detail);
+        Assert.Contains("pre_tool_use", detail);
+        Assert.Contains("Validate tool args", detail);
+    }
+
+    // ── Redaction ───────────────────────────────────────────────
+    //
+    // The denial path is best-effort defence in depth: secrets the agent
+    // assembles into a denied command should not bleed into world-readable
+    // logs. These tests pin the redaction surface so a future change to
+    // SecretPatterns can't silently weaken the contract.
+
+    [Theory]
+    [InlineData("git push https://x:ghp_abcdefghijklmnopqrstuvwxyz0123456789AB@github.com/foo")]
+    [InlineData("export TOKEN=ghs_abcdefghijklmnopqrstuvwxyz0123456789AB && curl ...")]
+    [InlineData("ghu_abcdefghijklmnopqrstuvwxyz0123456789AB")]
+    public void Redact_GitHubTokens_AreReplaced(string input)
+    {
+        var result = AgentPermissionHandler.Redact(input);
+
+        Assert.Contains("[REDACTED]", result);
+        Assert.DoesNotContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789AB", result);
+        Assert.DoesNotContain("ghs_abcdefghijklmnopqrstuvwxyz0123456789AB", result);
+        Assert.DoesNotContain("ghu_abcdefghijklmnopqrstuvwxyz0123456789AB", result);
+    }
+
+    [Fact]
+    public void Redact_BearerTokens_AreReplaced()
+    {
+        var result = AgentPermissionHandler.Redact("curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig' https://api");
+
+        Assert.Contains("[REDACTED]", result);
+        Assert.DoesNotContain("eyJhbGciOiJIUzI1NiJ9.payload.sig", result);
+    }
+
+    [Theory]
+    [InlineData("DB_PASSWORD=hunter2-secret")]
+    [InlineData("api_key=sk-proj-abcdefghijklmn")]
+    [InlineData("client_secret=oauth-secret-blob")]
+    public void Redact_AssignmentSecrets_AreReplaced(string input)
+    {
+        var result = AgentPermissionHandler.Redact(input);
+
+        Assert.Contains("[REDACTED]", result);
+    }
+
+    [Fact]
+    public void Redact_OrdinaryText_IsUnchanged()
+    {
+        // The redactor is high-precision: routine commands must pass through
+        // intact, otherwise the diagnostic loses signal.
+        var result = AgentPermissionHandler.Redact("git status --porcelain && dotnet build");
+
+        Assert.Equal("git status --porcelain && dotnet build", result);
+    }
+
+    [Fact]
+    public void RedactUrl_StripsPathAndQuery()
+    {
+        var result = AgentPermissionHandler.RedactUrl(
+            "https://api.github.com/user?access_token=ghp_abcdefghijklmnopqrstuvwxyz0123456789AB");
+
+        Assert.Equal("https://api.github.com/[…]", result);
+        Assert.DoesNotContain("access_token", result);
+        Assert.DoesNotContain("ghp_", result);
+    }
+
+    [Fact]
+    public void RedactUrl_NullOrEmpty_ReturnsNullSentinel()
+    {
+        Assert.Equal("(null)", AgentPermissionHandler.RedactUrl(null));
+        Assert.Equal("(null)", AgentPermissionHandler.RedactUrl(string.Empty));
+    }
+
+    [Fact]
+    public void DescribeRequest_Url_RedactsTokenInQueryString()
+    {
+        // Integration: the URL describer must use RedactUrl so denied URL
+        // requests don't leak tokens that came in via query strings.
+        var req = MakeUrl(
+            url: "https://api.github.com/repos?access_token=ghp_abcdefghijklmnopqrstuvwxyz0123456789AB",
+            intention: "Probe repos");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.DoesNotContain("ghp_", detail);
+        Assert.DoesNotContain("access_token", detail);
+        Assert.Contains("api.github.com", detail);
+    }
+
+    [Fact]
+    public void DescribeRequest_Shell_RedactsTokenInCommand()
+    {
+        // Integration: shell command text passes through Trunc → Redact.
+        var req = MakeShell(
+            fullCommandText: "git push https://x:ghp_abcdefghijklmnopqrstuvwxyz0123456789AB@github.com/foo",
+            intention: "Push branch");
+
+        var detail = AgentPermissionHandler.DescribeRequest(req);
+
+        Assert.DoesNotContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789AB", detail);
+        Assert.Contains("[REDACTED]", detail);
+    }
 }
