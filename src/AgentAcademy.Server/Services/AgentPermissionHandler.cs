@@ -314,6 +314,8 @@ public static class AgentPermissionHandler
     //   - GitHub tokens: gh[opsu]_<base62 ≥36>
     //   - HTTP bearer tokens: "Authorization: Bearer <token>" / "Bearer <token>"
     //   - "key=", "token=", "secret=", "password=", "api_key=" assignments
+    //   - JSON-encoded secret fields: "token":"...", "password":"...", etc.
+    //     (matters because tool arguments and results are commonly JSON blobs)
     //   - generic AWS-style 40-char base64 keys when prefixed by typical assignments
     //
     // Patterns NOT covered (knowingly): arbitrary high-entropy strings, JWTs
@@ -325,6 +327,7 @@ public static class AgentPermissionHandler
             | authorization\s*[:=]\s*\S+(?:\s+\S+)?                                # Authorization headers (Bearer + token)
             | bearer\s+[A-Za-z0-9._\-]{16,}                                        # bare Bearer tokens
             | (?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)\s*[:=]\s*[^\s""'&]{4,}
+            | ""(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)""\s*:\s*""[^""]{4,}""   # JSON-encoded secret fields
         ",
         System.Text.RegularExpressions.RegexOptions.Compiled);
 
