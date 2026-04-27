@@ -59,6 +59,19 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     ///
     /// Discovered via Sprint #9 ToolDiag telemetry (PR #173) on
     /// 2026-04-27. See P1.9 in roadmap.md.
+    ///
+    /// Sprint #12 (2026-04-27) extended the list after observing
+    /// software-engineer-1 thrash for the entire Implementation stage
+    /// on `write_bash`/`read_bash`/`list_bash`/`stop_bash` (the SDK's
+    /// shell-session control family — same Kind=shell permission as
+    /// `bash`), plus `task` (SDK subagent launch — bypasses the entire
+    /// orchestration/worktree workflow) and `create` (alternate
+    /// file-create — same Kind=write denial as `write_file`/`create_file`).
+    /// None of those calls ever reached AgentPermissionHandler success;
+    /// the agent burned the whole turn on tool-error retries and
+    /// produced zero `claim_task` / `write_file` / `commit_changes`
+    /// calls. Excluding them forces the model back onto the structured
+    /// command surface.
     /// </summary>
     internal static readonly IReadOnlyList<string> ExcludedSdkBuiltinTools = new[]
     {
@@ -66,6 +79,15 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         "bash",
         "shell",
         "exec",
+        // Shell session-control family: observed in Sprint #12 as the
+        // dominant failure mode for software-engineer-1 (52 write_bash +
+        // 22 read_bash + 16 list_bash calls in a single Implementation
+        // stage, all failing). They wrap the same underlying Kind=shell
+        // permission as `bash`.
+        "write_bash",
+        "read_bash",
+        "list_bash",
+        "stop_bash",
         // Read tool: confirmed Unhandled error in Sprint #9. Custom
         // `read_file` covers the use case via the workspace-aware path.
         "view",
@@ -74,10 +96,16 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         // pre-emptively so future agents don't hit the same trap.
         "write_file",
         "edit",
+        "create",
         "create_file",
         "delete_file",
         "str_replace_editor",
         "apply_patch",
+        // Subagent launch: bypasses the entire room/breakout/worktree
+        // orchestration. Agents must coordinate through the structured
+        // command system (CLAIM_TASK, ADD_TASK, room messages), not by
+        // forking opaque child agents.
+        "task",
     };
 
     /// <summary>
