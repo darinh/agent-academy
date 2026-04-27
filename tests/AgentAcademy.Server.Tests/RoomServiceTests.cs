@@ -589,11 +589,14 @@ public class RoomServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetRoomMessagesAsync_NoActiveSession_ReturnsOnlyUntaggedMessages()
+    public async Task GetRoomMessagesAsync_NoActiveSession_AgentMessagesSpanSessions_UserMessagesScoped()
     {
         // When no Active session exists and no explicit sessionId is given,
-        // only legacy untagged messages are returned. Prior session messages
-        // (both agent and user) are not leaked into the active view.
+        // agent messages from any session are surfaced (so the chat shows
+        // the ongoing dialogue), and legacy untagged messages are included.
+        // User messages from prior sessions are NOT leaked (#64) — only
+        // legacy untagged user messages and active-session user messages
+        // would qualify.
         using var scope = CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -612,9 +615,10 @@ public class RoomServiceTests : IDisposable
 
         var contents = messages.Select(m => m.Content).ToList();
         Assert.Contains("Legacy untagged msg", contents);
-        // Prior session messages: excluded (matches RoomSnapshotBuilder).
+        // Agent dialogue from prior session is now visible.
+        Assert.Contains("Archived agent msg", contents);
+        // User content from prior sessions never leaks.
         Assert.DoesNotContain("Archived human msg", contents);
-        Assert.DoesNotContain("Archived agent msg", contents);
     }
 
     // ── GetProjectNameForRoomAsync ────────────────────────────────

@@ -141,11 +141,12 @@ public sealed class RoomService : IRoomService
 
     /// <summary>
     /// Returns messages in a room with cursor-based pagination.
-    /// Returns non-DM messages scoped to a conversation session.
+    /// Returns non-DM messages.
     /// When <paramref name="sessionId"/> is explicit, returns only that
-    /// session's messages (archived view). When null, returns the active
-    /// session plus legacy untagged messages (live view), matching the
-    /// same contract as <see cref="RoomSnapshotBuilder"/>.
+    /// session's messages (archived view). When null, returns the most
+    /// recent messages across all sessions (live view), matching the
+    /// snapshot contract — see <see cref="RoomSnapshotBuilder"/> and
+    /// spec 005 §Message Management.
     /// </summary>
     public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
         string roomId, string? afterMessageId = null, int limit = 50, string? sessionId = null)
@@ -168,16 +169,21 @@ public sealed class RoomService : IRoomService
         }
         else
         {
-            // Live/active view: active session + legacy untagged messages.
-            // Matches RoomSnapshotBuilder contract (spec 005 §Message Management).
-            var activeSession = await _db.ConversationSessions
-                .Where(s => s.RoomId == roomId && s.Status == "Active")
-                .FirstOrDefaultAsync();
-            var activeSessionId = activeSession?.Id;
+            // Live view: most recent agent/system messages regardless of
+            // session; user messages remain scoped to active session + legacy
+            // untagged (#64 — never leak human content across sprint
+            // sessions). The active-session check is expressed as an EXISTS
+            // subquery so it executes in the same SQL statement as the
+            // messages read — no race window between two separate queries.
+            // Mirrors RoomSnapshotBuilder; see spec 005 §Message Management.
+            var userKind = nameof(MessageSenderKind.User);
 
             query = _db.Messages
                 .Where(m => m.RoomId == roomId && m.RecipientId == null
-                    && (m.SessionId == null || m.SessionId == activeSessionId));
+                    && (m.SenderKind != userKind
+                        || m.SessionId == null
+                        || _db.ConversationSessions.Any(s =>
+                            s.Id == m.SessionId && s.RoomId == roomId && s.Status == "Active")));
         }
 
         if (!string.IsNullOrEmpty(afterMessageId))

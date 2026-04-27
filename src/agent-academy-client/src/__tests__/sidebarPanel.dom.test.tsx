@@ -10,7 +10,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
 
@@ -566,6 +566,54 @@ describe("SidebarPanel", () => {
 
       await user.click(screen.getByText(/Switch Project/));
       expect(onSwitchProject).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("resize handle", () => {
+    beforeEach(() => {
+      try { window.localStorage.removeItem("aa.sidebar.width.v1"); } catch { /* */ }
+    });
+
+    it("renders a resize separator with default width when expanded", () => {
+      renderPanel({ sidebarOpen: true });
+      const handle = screen.getByRole("separator", { name: /resize sidebar/i });
+      expect(handle).toBeInTheDocument();
+      expect(handle).toHaveAttribute("aria-valuenow", "200");
+      expect(handle).toHaveAttribute("aria-valuemin", "180");
+      expect(handle).toHaveAttribute("aria-valuemax", "560");
+    });
+
+    it("does not render the resize handle when sidebar is collapsed", () => {
+      renderPanel({ sidebarOpen: false });
+      expect(screen.queryByRole("separator", { name: /resize sidebar/i })).not.toBeInTheDocument();
+    });
+
+    it("widens the sidebar on ArrowRight and persists the value", async () => {
+      const user = userEvent.setup();
+      renderPanel({ sidebarOpen: true });
+      const handle = screen.getByRole("separator", { name: /resize sidebar/i });
+      handle.focus();
+      await user.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
+      expect(handle).toHaveAttribute("aria-valuenow", "248");
+      // Persistence check
+      expect(window.localStorage.getItem("aa.sidebar.width.v1")).toBe("248");
+    });
+
+    it("clamps width to the minimum on heavy ArrowLeft input", async () => {
+      const user = userEvent.setup();
+      renderPanel({ sidebarOpen: true });
+      const handle = screen.getByRole("separator", { name: /resize sidebar/i });
+      handle.focus();
+      // Press ArrowLeft far more than enough to undershoot 180.
+      for (let i = 0; i < 30; i++) await user.keyboard("{ArrowLeft}");
+      expect(handle).toHaveAttribute("aria-valuenow", "180");
+    });
+
+    it("loads the persisted width on mount", () => {
+      window.localStorage.setItem("aa.sidebar.width.v1", "320");
+      renderPanel({ sidebarOpen: true });
+      const handle = screen.getByRole("separator", { name: /resize sidebar/i });
+      expect(handle).toHaveAttribute("aria-valuenow", "320");
     });
   });
 });

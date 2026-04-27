@@ -41,18 +41,22 @@ public sealed class RoomSnapshotBuilder : IRoomSnapshotBuilder
     public async Task<RoomSnapshot> BuildRoomSnapshotAsync(
         RoomEntity room, List<AgentLocationEntity>? preloadedLocations = null)
     {
-        var activeSession = await _db.ConversationSessions
-            .Where(s => s.RoomId == room.Id && s.Status == "Active")
-            .FirstOrDefaultAsync();
-
-        var activeSessionId = activeSession?.Id;
-
-        // Per spec 005 §Message Management: only the active session's messages plus
-        // legacy untagged messages. When no active session exists, return ONLY legacy
-        // untagged messages — do not leak prior-session history (#64).
+        // Live view shows the most recent N agent/system messages in the room
+        // regardless of conversation session — opening a room must always
+        // surface the ongoing dialogue, even when the active session has just
+        // rotated and is sparse. User messages remain scoped to the active
+        // session + legacy untagged (per spec 005 §Message Management, #64:
+        // never leak human content across sprint sessions). The user-message
+        // gate is expressed as an EXISTS subquery against ConversationSessions
+        // so the active-session lookup is part of the same SQL statement and
+        // not vulnerable to a session rotation between two separate reads.
+        var userKind = nameof(MessageSenderKind.User);
         var messages = await _db.Messages
             .Where(m => m.RoomId == room.Id && m.RecipientId == null
-                && (m.SessionId == null || m.SessionId == activeSessionId))
+                && (m.SenderKind != userKind
+                    || m.SessionId == null
+                    || _db.ConversationSessions.Any(s =>
+                        s.Id == m.SessionId && s.RoomId == room.Id && s.Status == "Active")))
             .OrderByDescending(m => m.SentAt)
             .Take(MaxRecentMessages)
             .OrderBy(m => m.SentAt)

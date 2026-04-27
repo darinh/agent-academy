@@ -393,13 +393,21 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
 
     private BreakoutRoom BuildBreakoutRoomSnapshot(BreakoutRoomEntity entity)
     {
+        // Live view: agent/system messages span sessions so a breakout's chat
+        // doesn't appear empty after a session rotation. User messages remain
+        // scoped to the active session (#64 — never leak human content across
+        // sessions). Mirrors RoomSnapshotBuilder; see spec 005 §Message
+        // Management.
         var activeSession = _db.ConversationSessions
             .Where(s => s.RoomId == entity.Id && s.Status == "Active")
             .FirstOrDefault();
         var activeSessionId = activeSession?.Id;
+        var userKind = nameof(MessageSenderKind.User);
 
         var filteredMessages = entity.Messages?
-            .Where(m => m.SessionId == null || m.SessionId == activeSessionId)
+            .Where(m => m.SenderKind != userKind
+                || m.SessionId == null
+                || m.SessionId == activeSessionId)
             .OrderBy(m => m.SentAt)
             ?? Enumerable.Empty<BreakoutMessageEntity>();
 

@@ -98,19 +98,21 @@ public sealed class BreakoutRoomServiceTests : IDisposable
         return entity;
     }
 
-    private BreakoutMessageEntity AddMessage(string breakoutId, string content = "Hello")
+    private BreakoutMessageEntity AddMessage(string breakoutId, string content = "Hello",
+        string senderKind = "Agent", string? sessionId = null)
     {
         var msg = new BreakoutMessageEntity
         {
             Id = Guid.NewGuid().ToString("N"),
             BreakoutRoomId = breakoutId,
-            SenderId = "agent-1",
-            SenderName = "Agent One",
+            SenderId = senderKind == "User" ? "human" : "agent-1",
+            SenderName = senderKind == "User" ? "Human" : "Agent One",
             SenderRole = "Engineer",
-            SenderKind = "Agent",
+            SenderKind = senderKind,
             Kind = nameof(MessageKind.Coordination),
             Content = content,
-            SentAt = DateTime.UtcNow
+            SentAt = DateTime.UtcNow,
+            SessionId = sessionId,
         };
         Db.BreakoutMessages.Add(msg);
         Db.SaveChanges();
@@ -508,6 +510,50 @@ public sealed class BreakoutRoomServiceTests : IDisposable
         Assert.NotNull(result);
         Assert.Single(result.RecentMessages);
         Assert.Equal("Test message", result.RecentMessages[0].Content);
+    }
+
+    [Fact]
+    public async Task GetBreakout_LiveView_AgentMessagesSpanSessions_UserMessagesScoped()
+    {
+        // Mirrors RoomSnapshotBuilder live-view contract (spec 005 §Message
+        // Management): agent/system breakout messages span sessions so the
+        // chat doesn't appear empty after a session rotation; user messages
+        // remain session-scoped (#64).
+        var room = AddRoom();
+        var breakout = AddBreakout(room.Id, "agent-1");
+        var activeSession = new ConversationSessionEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            RoomId = breakout.Id,
+            RoomType = "Breakout",
+            Status = "Active",
+        };
+        var oldSession = new ConversationSessionEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            RoomId = breakout.Id,
+            RoomType = "Breakout",
+            Status = "Archived",
+        };
+        Db.ConversationSessions.AddRange(activeSession, oldSession);
+        Db.SaveChanges();
+
+        AddMessage(breakout.Id, "active-agent", senderKind: "Agent", sessionId: activeSession.Id);
+        AddMessage(breakout.Id, "old-agent", senderKind: "Agent", sessionId: oldSession.Id);
+        AddMessage(breakout.Id, "legacy-agent", senderKind: "Agent", sessionId: null);
+        AddMessage(breakout.Id, "old-user", senderKind: "User", sessionId: oldSession.Id);
+        AddMessage(breakout.Id, "active-user", senderKind: "User", sessionId: activeSession.Id);
+
+        Db.ChangeTracker.Clear();
+        var result = await Sut.GetBreakoutRoomAsync(breakout.Id);
+
+        Assert.NotNull(result);
+        var contents = result.RecentMessages.Select(m => m.Content).ToList();
+        Assert.Contains("active-agent", contents);
+        Assert.Contains("old-agent", contents);      // agent dialogue spans sessions
+        Assert.Contains("legacy-agent", contents);
+        Assert.Contains("active-user", contents);
+        Assert.DoesNotContain("old-user", contents); // user content stays session-scoped (#64)
     }
 
     // ── GetBreakoutRoomsAsync ───────────────────────────────────
