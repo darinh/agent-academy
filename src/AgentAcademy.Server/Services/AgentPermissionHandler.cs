@@ -200,17 +200,37 @@ public static class AgentPermissionHandler
                 }
             }
 
+            // Subtype-specific diagnostic payload. The base PermissionRequest
+            // only exposes Kind; the actionable detail (what command, what file,
+            // what tool-call ID) lives on the concrete subtypes. Without this
+            // we can't distinguish "model invoked an SDK builtin we don't gate"
+            // from "session-lifecycle hook before tool registration" — both
+            // surface as bare "Kind=shell" denials. See: PermissionRequestShell,
+            // PermissionRequestWrite, PermissionRequestUrl, etc. in SDK 0.2.2.
+            //
+            // Compute the detail string lazily — only if the corresponding log
+            // level is enabled. DescribeRequest does several string allocations
+            // (truncation, replace) that are wasted when the sink is filtered
+            // (e.g., LogDebug disabled in Production).
             if (isNewKind)
             {
-                logger.LogWarning(
-                    "Denied permission request: Kind={Kind}, Session={SessionId} (first denial of this Kind in session, total denials={TotalCount})",
-                    request.Kind, sessionId, totalCount);
+                if (logger.IsEnabled(LogLevel.Warning))
+                {
+                    var detail = DescribeRequest(request);
+                    logger.LogWarning(
+                        "Denied permission request: Kind={Kind}, Session={SessionId}, Detail={Detail} (first denial of this Kind in session, total denials={TotalCount})",
+                        request.Kind, sessionId, detail, totalCount);
+                }
             }
             else
             {
-                logger.LogDebug(
-                    "Denied permission request: Kind={Kind}, Session={SessionId} (denial #{KindCount} of this Kind, total denials={TotalCount})",
-                    request.Kind, sessionId, kindCount, totalCount);
+                if (logger.IsEnabled(LogLevel.Debug))
+                {
+                    var detail = DescribeRequest(request);
+                    logger.LogDebug(
+                        "Denied permission request: Kind={Kind}, Session={SessionId}, Detail={Detail} (denial #{KindCount} of this Kind, total denials={TotalCount})",
+                        request.Kind, sessionId, detail, kindCount, totalCount);
+                }
             }
 
             return Task.FromResult(new PermissionRequestResult
@@ -229,6 +249,103 @@ public static class AgentPermissionHandler
     public static void ClearSession(string sessionId)
     {
         // Intentional no-op.
+    }
+
+    /// <summary>
+    /// Builds a compact, structured one-line description of a
+    /// <see cref="PermissionRequest"/> for diagnostic logging. Pattern-matches
+    /// on the concrete SDK subtype so callers see the actionable fields
+    /// (command text, file name, URL, tool-call ID, intention) rather than
+    /// only the opaque <c>Kind</c>.
+    ///
+    /// Truncates long fields (FullCommandText, Intention, NewFileContents) to
+    /// keep log lines structured-log-friendly and bounded.
+    ///
+    /// Applies a best-effort redaction pass over free-text fields to strip
+    /// common token shapes (GitHub PATs, bearer tokens, "key=" / "token=" /
+    /// "password=" assignments). This is defence in depth — the agent's
+    /// request was denied so nothing actually executed, but the log still
+    /// lands in <c>/tmp/aa-dev.log</c> which is world-readable on the dev
+    /// host. Redaction is pattern-based, not exhaustive — do not rely on it
+    /// to scrub arbitrary secrets the model decides to embed.
+    /// </summary>
+    internal static string DescribeRequest(PermissionRequest request)
+    {
+        // Cap free-text fields. The agent-stated Intention can be paragraphs;
+        // FullCommandText can be a multi-line heredoc. We only need enough to
+        // recognise the operation in a tail of the log.
+        const int maxField = 240;
+        static string Trunc(string? s)
+        {
+            if (string.IsNullOrEmpty(s)) return "(empty)";
+            var redacted = Redact(s);
+            var oneLine = redacted.Replace('\n', ' ').Replace('\r', ' ');
+            return oneLine.Length <= maxField ? oneLine : oneLine.Substring(0, maxField) + "…";
+        }
+
+        return request switch
+        {
+            PermissionRequestShell s =>
+                $"shell tool_call_id={s.ToolCallId ?? "(null)"} cmd=\"{Trunc(s.FullCommandText)}\" intention=\"{Trunc(s.Intention)}\" has_write_redirect={s.HasWriteFileRedirection} cmd_count={s.Commands?.Length ?? 0}",
+            PermissionRequestWrite w =>
+                $"write tool_call_id={w.ToolCallId ?? "(null)"} file=\"{w.FileName ?? "(null)"}\" intention=\"{Trunc(w.Intention)}\" has_diff={!string.IsNullOrEmpty(w.Diff)}",
+            PermissionRequestRead r =>
+                $"read tool_call_id={r.ToolCallId ?? "(null)"} path=\"{r.Path ?? "(null)"}\" intention=\"{Trunc(r.Intention)}\"",
+            PermissionRequestUrl u =>
+                $"url tool_call_id={u.ToolCallId ?? "(null)"} url=\"{RedactUrl(u.Url)}\" intention=\"{Trunc(u.Intention)}\"",
+            PermissionRequestMcp m =>
+                $"mcp tool_call_id={m.ToolCallId ?? "(null)"} server=\"{m.ServerName ?? "(null)"}\" tool=\"{m.ToolName ?? "(null)"}\" read_only={m.ReadOnly}",
+            PermissionRequestMemory mem =>
+                $"memory tool_call_id={mem.ToolCallId ?? "(null)"} subject=\"{Trunc(mem.Subject)}\" fact=\"{Trunc(mem.Fact)}\"",
+            PermissionRequestCustomTool ct =>
+                $"custom-tool tool_call_id={ct.ToolCallId ?? "(null)"} tool=\"{ct.ToolName ?? "(null)"}\" desc=\"{Trunc(ct.ToolDescription)}\"",
+            PermissionRequestHook h =>
+                $"hook tool_call_id={h.ToolCallId ?? "(null)"} tool=\"{h.ToolName ?? "(null)"}\" hook_msg=\"{Trunc(h.HookMessage)}\"",
+            _ => $"(unrecognized subtype {request.GetType().Name})",
+        };
+    }
+
+    // Redacts common secret shapes so denial logs (which include the rejected
+    // command/intention/URL) don't accidentally leak credentials the agent
+    // assembled. The patterns are intentionally narrow — high-precision over
+    // high-recall. Anything matched is replaced with "[REDACTED]".
+    //
+    // Patterns covered:
+    //   - GitHub tokens: gh[opsu]_<base62 ≥36>
+    //   - HTTP bearer tokens: "Authorization: Bearer <token>" / "Bearer <token>"
+    //   - "key=", "token=", "secret=", "password=", "api_key=" assignments
+    //   - generic AWS-style 40-char base64 keys when prefixed by typical assignments
+    //
+    // Patterns NOT covered (knowingly): arbitrary high-entropy strings, JWTs
+    // mid-payload, anything novel the model invents. Treat the redactor as
+    // defence-in-depth, not a guarantee.
+    private static readonly System.Text.RegularExpressions.Regex SecretPatterns = new(
+        @"(?ix)
+            gh[opsu]_[A-Za-z0-9]{36,}                                              # GitHub PAT/OAuth/server/user tokens
+            | authorization\s*[:=]\s*\S+(?:\s+\S+)?                                # Authorization headers (Bearer + token)
+            | bearer\s+[A-Za-z0-9._\-]{16,}                                        # bare Bearer tokens
+            | (?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)\s*[:=]\s*[^\s""'&]{4,}
+        ",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    internal static string Redact(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return input;
+        return SecretPatterns.Replace(input, "[REDACTED]");
+    }
+
+    // URLs warrant their own redactor: keep scheme+host (the diagnostic value
+    // is "what host did the model try to call?") but strip path and query
+    // (which often carry tokens like ?access_token=…). Falls back to the raw
+    // value when parsing fails so we still see something.
+    internal static string RedactUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return "(null)";
+        if (Uri.TryCreate(url, UriKind.Absolute, out var u))
+        {
+            return $"{u.Scheme}://{u.Host}{(u.IsDefaultPort ? "" : ":" + u.Port)}/[…]";
+        }
+        return Redact(url);
     }
 
     private sealed class DenialState
