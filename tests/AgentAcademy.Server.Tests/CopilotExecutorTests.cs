@@ -58,6 +58,84 @@ public class CopilotExceptionTests
     }
 }
 
+public class CopilotExecutorExcludedToolsTests
+{
+    // Sprint #9 ToolDiag telemetry (PR #173) confirmed SDK `bash` triggers
+    // Kind=shell denial → "unexpected user permission response" → turn crash.
+    // SDK `view` failed with the same root cause on parallel tool batches.
+    // Both tools must remain excluded so agents converge on the structured
+    // command system + registered read tools. See P1.9 in roadmap.md.
+    [Theory]
+    [InlineData("bash")]
+    [InlineData("view")]
+    public void ExcludedSdkBuiltinTools_Includes_KnownFailingTool(string toolName)
+    {
+        Assert.Contains(toolName, CopilotExecutor.ExcludedSdkBuiltinTools);
+    }
+
+    // Write-permission tools share the same denial pattern (Kind=write is
+    // gated by a custom tool implying "write"; SDK builtins don't, so the
+    // SDK request would crash the turn). Excluded pre-emptively.
+    [Theory]
+    [InlineData("write_file")]
+    [InlineData("edit")]
+    [InlineData("create_file")]
+    [InlineData("delete_file")]
+    [InlineData("str_replace_editor")]
+    [InlineData("apply_patch")]
+    public void ExcludedSdkBuiltinTools_Includes_WriteFamilyTool(string toolName)
+    {
+        Assert.Contains(toolName, CopilotExecutor.ExcludedSdkBuiltinTools);
+    }
+
+    [Fact]
+    public void ExcludedSdkBuiltinTools_HasNoDuplicates()
+    {
+        var list = CopilotExecutor.ExcludedSdkBuiltinTools;
+        var distinct = new HashSet<string>(list, StringComparer.Ordinal);
+        Assert.Equal(list.Count, distinct.Count);
+    }
+
+    [Fact]
+    public void ExcludedSdkBuiltinTools_IsNonEmpty()
+    {
+        Assert.NotEmpty(CopilotExecutor.ExcludedSdkBuiltinTools);
+    }
+
+    // Regression guard: SDK's ExcludedTools filters by name regardless of
+    // origin. The custom AgentToolFunctions register `write_file` — the same
+    // name as an SDK builtin we want to exclude. ResolveExcludedSdkTools
+    // must remove any registered name from the exclusion list so the custom
+    // tool isn't silently dropped.
+    [Fact]
+    public void ResolveExcludedSdkTools_DropsRegisteredOverlap_WriteFile()
+    {
+        var registered = new HashSet<string>(StringComparer.Ordinal) { "write_file", "read_file" };
+        var resolved = CopilotExecutor.ResolveExcludedSdkTools(registered);
+        Assert.DoesNotContain("write_file", resolved);
+        // Other builtins remain excluded.
+        Assert.Contains("bash", resolved);
+        Assert.Contains("view", resolved);
+    }
+
+    [Fact]
+    public void ResolveExcludedSdkTools_NoOverlap_ReturnsFullList()
+    {
+        var registered = new HashSet<string>(StringComparer.Ordinal) { "list_tasks", "remember" };
+        var resolved = CopilotExecutor.ResolveExcludedSdkTools(registered);
+        Assert.Equal(CopilotExecutor.ExcludedSdkBuiltinTools.Count, resolved.Count);
+        foreach (var name in CopilotExecutor.ExcludedSdkBuiltinTools)
+            Assert.Contains(name, resolved);
+    }
+
+    [Fact]
+    public void ResolveExcludedSdkTools_EmptyRegistered_ReturnsFullList()
+    {
+        var resolved = CopilotExecutor.ResolveExcludedSdkTools(new HashSet<string>(StringComparer.Ordinal));
+        Assert.Equal(CopilotExecutor.ExcludedSdkBuiltinTools.Count, resolved.Count);
+    }
+}
+
 // CopilotTokenProviderTests moved to CopilotTokenProviderTests.cs
 
 public class ErrorClassificationTests

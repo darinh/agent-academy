@@ -44,6 +44,63 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 {
+    /// <summary>
+    /// SDK built-in tools that bypass the structured-command discipline
+    /// and request permission Kinds (<c>shell</c>, <c>write</c>) the
+    /// <see cref="AgentPermissionHandler"/> denies. Excluded from every
+    /// session to avoid the "unexpected user permission response" turn
+    /// crash. Side-effecting work (shell, file mutation) flows through
+    /// the structured command system (RUN_BUILD, RUN_TESTS, ADD_TASK,
+    /// CREATE_PR, etc.); reads flow through the registered
+    /// <c>read_file</c> + <c>search_code</c> tools.
+    ///
+    /// Kept ordinal-case so the SDK's case-sensitive tool registry
+    /// matches: SDK builtin names are lowercase, snake_case.
+    ///
+    /// Discovered via Sprint #9 ToolDiag telemetry (PR #173) on
+    /// 2026-04-27. See P1.9 in roadmap.md.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ExcludedSdkBuiltinTools = new[]
+    {
+        // Shell-permission tools: confirmed Kind=shell denial in Sprint #9.
+        "bash",
+        "shell",
+        "exec",
+        // Read tool: confirmed Unhandled error in Sprint #9. Custom
+        // `read_file` covers the use case via the workspace-aware path.
+        "view",
+        // Write-permission tools: same Kind=write denial pattern would
+        // apply (no registered custom tool implies "write"). Excluded
+        // pre-emptively so future agents don't hit the same trap.
+        "write_file",
+        "edit",
+        "create_file",
+        "delete_file",
+        "str_replace_editor",
+        "apply_patch",
+    };
+
+    /// <summary>
+    /// Returns the SDK builtin names to exclude for a session, with any
+    /// name that also exists in <paramref name="registeredToolNames"/>
+    /// removed. The SDK's <c>SessionConfig.ExcludedTools</c> filters by
+    /// tool name regardless of origin, so blindly excluding a name that
+    /// shadows a registered custom tool would silently drop the custom
+    /// tool too. The current real overlap is <c>write_file</c> (registered
+    /// in <see cref="AgentToolFunctions"/>); resolving dynamically also
+    /// protects against future name collisions.
+    /// </summary>
+    internal static IReadOnlyList<string> ResolveExcludedSdkTools(IReadOnlySet<string> registeredToolNames)
+    {
+        var result = new List<string>(ExcludedSdkBuiltinTools.Count);
+        foreach (var name in ExcludedSdkBuiltinTools)
+        {
+            if (!registeredToolNames.Contains(name))
+                result.Add(name);
+        }
+        return result;
+    }
+
     private readonly ILogger<CopilotExecutor> _logger;
     private readonly ILogger<StubExecutor> _stubLogger;
     private readonly ICopilotClientFactory _clientFactory;
@@ -352,11 +409,23 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         var tools = _toolRegistry.GetToolsForAgent(agent.EnabledTools, agent.Id, agent.Name, roomId, workspacePath);
         var toolNames = new HashSet<string>(tools.Select(t => t.Name), StringComparer.Ordinal);
 
+        // Compute the effective SDK-builtin exclusion list for this session:
+        // never exclude a name that's also a registered custom tool, because
+        // the SDK's `ExcludedTools` filters by tool name (not by origin) and
+        // would silently drop our custom tool too. The current overlap is
+        // `write_file`, but checking dynamically guards against future
+        // custom tools added with builtin-shadowing names.
+        var effectiveExcludedTools = ResolveExcludedSdkTools(toolNames);
+
         var config = new SessionConfig
         {
             Model = agent.Model ?? "claude-opus-4.7",
             Streaming = true,
             Tools = [.. tools],
+            // SDK builtin tools that bypass our structured-command discipline
+            // are excluded — see <see cref="ExcludedSdkBuiltinTools"/> and
+            // <see cref="ResolveExcludedSdkTools"/>.
+            ExcludedTools = [.. effectiveExcludedTools],
             OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger, _livenessTracker),
         };
 
