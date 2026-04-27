@@ -10,6 +10,7 @@ export const useSidebarStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
+    position: "relative",
   },
   sidebarCollapsed: {
     width: "48px",
@@ -84,6 +85,35 @@ export const useSidebarStyles = makeStyles({
     textTransform: "uppercase",
   },
   roomList: { display: "grid", gap: "1px" },
+  roomListScrollable: {
+    display: "grid",
+    gap: "1px",
+    // Cap to roughly 10 simple room rows (≈22px each + 1px gap) so a long
+    // room list doesn't push the Agents section off-screen. Falls back to
+    // 40vh on small viewports so the cap stays within reach.
+    maxHeight: "min(280px, 40vh)",
+    overflowY: "auto",
+    overflowX: "hidden",
+  },
+  sidebarResizeHandle: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: "5px",
+    height: "100%",
+    cursor: "col-resize",
+    userSelect: "none",
+    zIndex: 10,
+    backgroundColor: "transparent",
+    transitionProperty: "background-color",
+    transitionDuration: "0.15s",
+    ":hover": {
+      backgroundColor: "rgba(91, 141, 239, 0.35)",
+    },
+  },
+  sidebarResizeHandleActive: {
+    backgroundColor: "rgba(91, 141, 239, 0.55)",
+  },
   sidebarUtilityRow: {
     display: "flex",
     alignItems: "center",

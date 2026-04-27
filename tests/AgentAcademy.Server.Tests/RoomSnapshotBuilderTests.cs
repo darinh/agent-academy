@@ -168,8 +168,12 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
     }
 
     [Fact]
-    public async Task BuildSnapshot_FiltersMessagesByActiveSession()
+    public async Task BuildSnapshot_LiveView_IncludesAgentMessagesFromAllSessions()
     {
+        // Spec 005 §Message Management: agent/system messages span sessions
+        // so opening a room always surfaces the ongoing agent dialogue, even
+        // when the active session has just rotated and is sparse.
+        // User messages remain session-scoped (#64).
         var room = SeedRoom();
         var activeSession = SeedSession(room.Id, "Active");
         var oldSession = SeedSession(room.Id, "Archived");
@@ -185,7 +189,8 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
         var contents = snapshot.RecentMessages.Select(m => m.Content).ToList();
         Assert.Contains("active-session", contents);
         Assert.Contains("no-session", contents);
-        Assert.DoesNotContain("old-session", contents);
+        // Agent message from prior session is NOW included (was excluded under old contract).
+        Assert.Contains("old-session", contents);
         // Per spec 005 §Message Management: user messages from prior sessions must NOT
         // leak into the current room snapshot. Regression test for #64.
         Assert.DoesNotContain("user-msg", contents);
@@ -196,6 +201,8 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
     {
         // Regression test for #64: a new sprint session in a room that has user
         // messages from a prior session must not return those old user messages.
+        // Agent messages from prior sessions ARE included so the chat doesn't
+        // appear empty after a session rotation.
         var room = SeedRoom();
         var priorSession = SeedSession(room.Id, "Archived");
         var currentSession = SeedSession(room.Id, "Active");
@@ -212,16 +219,19 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
         var contents = snapshot.RecentMessages.Select(m => m.Content).ToList();
         Assert.Contains("current-user-msg", contents);
         Assert.DoesNotContain("prior-user-msg", contents);
-        Assert.DoesNotContain("prior-agent-msg", contents);
+        // Agent message from prior session is now visible (live view shows
+        // agent dialogue across sessions).
+        Assert.Contains("prior-agent-msg", contents);
     }
 
     [Fact]
-    public async Task BuildSnapshot_NoActiveSession_ReturnsOnlyUntaggedMessages()
+    public async Task BuildSnapshot_NoActiveSession_ReturnsAgentMessagesAndLegacyOnly()
     {
-        // Regression guard for #64: when no Active ConversationSession exists
-        // (real state after ArchiveAllActiveSessionsAsync), the snapshot must NOT
-        // fall back to returning all cross-session history. Only legacy untagged
-        // messages should be returned.
+        // When no Active ConversationSession exists (real state after
+        // ArchiveAllActiveSessionsAsync), the live snapshot returns agent
+        // messages from any session plus legacy untagged messages. User
+        // messages remain restricted (no active session → only legacy
+        // untagged user messages would qualify).
         var room = SeedRoom();
         var archivedSession = SeedSession(room.Id, "Archived");
 
@@ -234,7 +244,10 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
 
         var contents = snapshot.RecentMessages.Select(m => m.Content).ToList();
         Assert.Contains("legacy-untagged", contents);
-        Assert.DoesNotContain("archived-agent", contents);
+        // Agent dialogue from archived session is now visible — fixes the
+        // "rooms only show system messages" bug.
+        Assert.Contains("archived-agent", contents);
+        // User content from prior sessions never leaks.
         Assert.DoesNotContain("archived-user", contents);
     }
 

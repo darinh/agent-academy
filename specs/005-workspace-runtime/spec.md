@@ -135,10 +135,10 @@ Validation: room must exist, sender must be in catalog (for agent messages).
 
 **Session-aware message loading**: Two query modes exist:
 
-- **Live/active view** (`sessionId` omitted): `RoomSnapshotBuilder.BuildRoomSnapshotAsync` and `RoomService.GetRoomMessagesAsync(roomId, sessionId: null)` both load only messages from the active conversation session plus legacy untagged messages. These two callers share the same query contract.
+- **Live view** (`sessionId` omitted): `RoomSnapshotBuilder.BuildRoomSnapshotAsync` and `RoomService.GetRoomMessagesAsync(roomId, sessionId: null)` both load the most recent N (≤200) messages in the room ordered chronologically. **Agent and system messages are returned regardless of conversation session** so opening a room always shows the ongoing agent dialogue even when the active session has just rotated and is sparse. **User messages remain scoped** to the active session plus legacy untagged messages (`SessionId == null`) — never leaking human content across sprint sessions (#64). These two callers share the same query contract.
 - **Archived/explicit view** (`sessionId` provided): `RoomService.GetRoomMessagesAsync(roomId, sessionId: "...")` returns only messages from that specific session — no cross-session messages, no legacy untagged messages. This is used when the frontend selects an archived session from the sessions dropdown.
 
-Messages are tagged with `SessionId` when posted. See spec 003 → Conversation Session Management for epoch lifecycle details.
+Messages are still tagged with `SessionId` when posted (see spec 003 → Conversation Session Management) so explicit session views remain accurate; the live view simply stops filtering agent/system messages by session.
 
 **Message tagging**: `PostMessageAsync`, `PostHumanMessageAsync`, and `PostBreakoutMessageAsync` call `ConversationSessionService.GetOrCreateActiveSessionAsync` to tag each message with the active session ID and increment the session's message count.
 

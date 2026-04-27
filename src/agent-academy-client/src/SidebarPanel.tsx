@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, useEffect } from "react";
+import { memo, useState, useCallback, useEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   Button,
@@ -100,6 +100,32 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 const NAV_GROUP_STORAGE_KEY = "aa.sidebar.collapsedGroups.v1";
+const SIDEBAR_WIDTH_STORAGE_KEY = "aa.sidebar.width.v1";
+const SIDEBAR_WIDTH_DEFAULT = 200;
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 560;
+
+function loadSidebarWidth(): number {
+  if (typeof window === "undefined") return SIDEBAR_WIDTH_DEFAULT;
+  try {
+    const raw = window.localStorage?.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    if (!raw) return SIDEBAR_WIDTH_DEFAULT;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return SIDEBAR_WIDTH_DEFAULT;
+    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n)));
+  } catch {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+}
+
+function saveSidebarWidth(width: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+  } catch {
+    /* privacy mode / quota — degrade silently */
+  }
+}
 
 function loadCollapsedGroups(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -163,10 +189,71 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   const [newRoomName, setNewRoomName] = useState("");
   const [cleaningUp, setCleaningUp] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => loadCollapsedGroups());
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadSidebarWidth());
+  const [resizing, setResizing] = useState(false);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  // Holds the cleanup fn for an in-flight drag so we can detach window
+  // listeners if the component unmounts (or the sidebar collapses) mid-drag.
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => {
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = null;
+  }, []);
 
   useEffect(() => {
     saveCollapsedGroups(collapsedGroups);
   }, [collapsedGroups]);
+
+  // Persist sidebar width on every change. Cheap (single localStorage write)
+  // and means the value survives reloads even if the user never mouses up
+  // (e.g., a crash mid-drag).
+  useEffect(() => {
+    saveSidebarWidth(sidebarWidth);
+  }, [sidebarWidth]);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    // If a previous drag never received mouseup (rare; e.g. rapid remount),
+    // tear down its listeners before starting a new one.
+    dragCleanupRef.current?.();
+    setResizing(true);
+    const startX = e.clientX;
+    const startWidth = sidebarRef.current?.getBoundingClientRect().width ?? sidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      const next = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(startWidth + delta)));
+      setSidebarWidth(next);
+    };
+    const cleanup = () => {
+      setResizing(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      dragCleanupRef.current = null;
+    };
+    const onUp = () => cleanup();
+    dragCleanupRef.current = cleanup;
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [sidebarWidth]);
+
+  const handleResizeKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
+    let delta = 0;
+    if (e.key === "ArrowLeft") delta = -16;
+    else if (e.key === "ArrowRight") delta = 16;
+    else if (e.key === "Home") {
+      e.preventDefault();
+      setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+      return;
+    }
+    if (delta === 0) return;
+    e.preventDefault();
+    setSidebarWidth((cur) => Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, cur + delta)));
+  }, []);
+
+  const handleResizeDoubleClick = useCallback(() => {
+    setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+  }, []);
 
   const toggleGroup = useCallback((groupId: string) => {
     setCollapsedGroups((prev) => {
@@ -274,7 +361,11 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   };
 
   return (
-    <aside className={mergeClasses(s.sidebar, !props.sidebarOpen && s.sidebarCollapsed)}>
+    <aside
+      ref={sidebarRef}
+      className={mergeClasses(s.sidebar, !props.sidebarOpen && s.sidebarCollapsed)}
+      style={props.sidebarOpen ? { width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` } : undefined}
+    >
       {/* Brand */}
       <div className={s.sidebarHeader}>
         <div className={s.sidebarToolbar}>
@@ -434,7 +525,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                 />
               </div>
             )}
-            <div className={s.roomList}>
+            <div className={s.roomListScrollable}>
               {props.rooms.map((candidate) => {
                 const dotColor = phaseDotColor(candidate.currentPhase);
                 const roomAgents = agentsByRoom.get(candidate.id) ?? [];
@@ -536,6 +627,24 @@ const SidebarPanel = memo(function SidebarPanel(props: {
           user={props.user}
           onLogout={props.onLogout ?? (() => {})}
           onOpenSettings={props.onOpenSettings}
+        />
+      )}
+
+      {/* Drag-to-resize handle (only when expanded). Persisted via localStorage. */}
+      {props.sidebarOpen && (
+        <div
+          className={mergeClasses(s.sidebarResizeHandle, resizing ? s.sidebarResizeHandleActive : undefined)}
+          onMouseDown={handleResizeMouseDown}
+          onDoubleClick={handleResizeDoubleClick}
+          onKeyDown={handleResizeKeyDown}
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={SIDEBAR_WIDTH_MIN}
+          aria-valuemax={SIDEBAR_WIDTH_MAX}
+          tabIndex={0}
+          title="Drag to resize · double-click to reset"
         />
       )}
     </aside>
