@@ -41,6 +41,26 @@ internal sealed class CodeWriteToolWrapper
     private readonly IReadOnlyList<string> _protectedPaths;
 
     /// <summary>
+    /// When true, the wrapper refuses <c>write_file</c> and <c>commit_changes</c>
+    /// unless <see cref="_scopeRoot"/> resolves to a linked git worktree. This
+    /// closes P1.9 blocker D: agents that get this tool group enabled in the
+    /// main room must call <c>CLAIM_TASK</c> first to be routed into a per-task
+    /// worktree before they can write — preventing parallel-task work from
+    /// landing on the develop checkout. Set true by the code-write factory;
+    /// false by spec-write (which legitimately edits the develop checkout
+    /// because spec authors don't claim tasks).
+    /// </summary>
+    private readonly bool _requireWorktree;
+
+    /// <summary>
+    /// Cached classification of <see cref="_scopeRoot"/>: <c>true</c> if it is
+    /// a linked git worktree, <c>false</c> if it is the main checkout (or
+    /// <see cref="_scopeRoot"/> is null), <c>null</c> when git was unavailable
+    /// to classify it. Computed once at construction.
+    /// </summary>
+    private readonly bool? _isLinkedWorktree;
+
+    /// <summary>
     /// When set, all path resolution and git operations target this directory
     /// instead of <see cref="AgentToolFunctions.FindProjectRoot"/>. Set per-session
     /// for breakouts that own a worktree; null for main-room agents that operate
@@ -67,8 +87,8 @@ internal sealed class CodeWriteToolWrapper
     internal CodeWriteToolWrapper(
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null,
-        string? scopeRoot = null)
-        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId, new[] { "src" }, CodeWriteProtectedPaths, scopeRoot)
+        string? scopeRoot = null, bool requireWorktree = true)
+        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId, new[] { "src" }, CodeWriteProtectedPaths, scopeRoot, requireWorktree)
     {
     }
 
@@ -76,9 +96,9 @@ internal sealed class CodeWriteToolWrapper
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity, string? roomId,
         string allowedRoot, IReadOnlyList<string> protectedPaths,
-        string? scopeRoot = null)
+        string? scopeRoot = null, bool requireWorktree = false)
         : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId,
-               ValidateSingleRoot(allowedRoot), protectedPaths, scopeRoot)
+               ValidateSingleRoot(allowedRoot), protectedPaths, scopeRoot, requireWorktree)
     {
     }
 
@@ -98,7 +118,7 @@ internal sealed class CodeWriteToolWrapper
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity, string? roomId,
         IReadOnlyList<string> allowedRoots, IReadOnlyList<string> protectedPaths,
-        string? scopeRoot = null)
+        string? scopeRoot = null, bool requireWorktree = false)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -125,6 +145,17 @@ internal sealed class CodeWriteToolWrapper
         _allowedRoots = normalized;
         _protectedPaths = protectedPaths ?? Array.Empty<string>();
         _scopeRoot = ScopeRootValidator.ValidateAndCanonicalize(scopeRoot, nameof(scopeRoot));
+        _requireWorktree = requireWorktree;
+
+        // Classify the scope root once at construction. Null when:
+        //   - _scopeRoot is null (no per-session worktree, e.g. spec-write
+        //     against the develop checkout), OR
+        //   - git couldn't run (binary missing, edge environment) — we can't
+        //     know, so we DON'T enforce in that case (fail-open to avoid
+        //     bricking environments without git, e.g. some test setups).
+        _isLinkedWorktree = _scopeRoot is null
+            ? false
+            : ScopeRootValidator.IsLinkedWorktree(_scopeRoot);
     }
 
     /// <summary>
@@ -176,6 +207,10 @@ internal sealed class CodeWriteToolWrapper
         // Reject binary content (null bytes)
         if (content.Contains('\0'))
             return "Error: Binary content detected (null bytes). Only text files are supported.";
+
+        var worktreeRefusal = TryRefuseMainCheckoutWrite("write_file");
+        if (worktreeRefusal is not null)
+            return worktreeRefusal;
 
         var projectRoot = ResolveScopeRoot();
         var fullPath = Path.GetFullPath(Path.Combine(projectRoot, path));
@@ -252,6 +287,69 @@ internal sealed class CodeWriteToolWrapper
         }
     }
 
+    /// <summary>
+    /// Returns a refusal message if this wrapper requires a per-task worktree
+    /// but is operating against the develop checkout (or has no scope set);
+    /// returns <c>null</c> when the write is permitted to proceed.
+    /// </summary>
+    /// <remarks>
+    /// Closes P1.9 blocker D. The previous behaviour silently fell through to
+    /// the develop checkout when an agent in the main room called write_file,
+    /// contaminating develop with parallel-task work product. Now agents must
+    /// CLAIM_TASK first — that lazily provisions a worktree, the next-turn
+    /// workspace resolver routes the agent to it, and writes proceed normally.
+    /// Spec-write wrappers do NOT enforce this (Thucydides legitimately edits
+    /// the develop checkout because spec authors don't claim implementation
+    /// tasks). When git is unavailable to classify the scope (returns null),
+    /// fail-open so non-git environments (some test harnesses) don't break.
+    /// </remarks>
+    private string? TryRefuseMainCheckoutWrite(string operationName)
+    {
+        if (!_requireWorktree) return null;
+        if (_isLinkedWorktree == true) return null;
+
+        // Re-classify lazily when the construction-time check returned null
+        // (codex review round 2): a transient git-spawn failure at session
+        // creation must not become a persistent write outage that only clears
+        // when the agent's Copilot session is invalidated. The recheck is
+        // cheap (one git rev-parse) and only runs when the cached value is
+        // unknown — once positively classified, _isLinkedWorktree is a final
+        // bool and the cheap fast-path above wins on every subsequent call.
+        var classification = _isLinkedWorktree;
+        if (classification is null && _scopeRoot is not null)
+            classification = ScopeRootValidator.IsLinkedWorktree(_scopeRoot);
+
+        if (classification == true) return null;
+
+        // Fail closed when classification is unknown (codex review round 1):
+        // if git is unavailable to confirm the scope is a linked worktree, we
+        // cannot prove writes won't land on the develop checkout. Surface a
+        // clear refusal rather than silently re-introducing the contamination
+        // this enforcement exists to prevent. Tests / non-git environments
+        // that legitimately need writes-without-classification opt out via
+        // requireWorktree=false.
+        if (classification is null)
+        {
+            _logger.LogWarning(
+                "{Operation} by {AgentId} REFUSED — could not classify scope as a linked git worktree (git unavailable). " +
+                "scopeRoot={ScopeRoot}",
+                operationName, _agentId, ResolveScopeRoot());
+            return "Error: " + operationName + " could not verify the working directory is a per-task worktree " +
+                   "(git classification unavailable). Refusing rather than risking writes to the develop checkout. " +
+                   "Call CLAIM_TASK <taskId> first to provision a per-task worktree, then retry.";
+        }
+
+        _logger.LogWarning(
+            "{Operation} by {AgentId} REFUSED — scope is not a per-task worktree (cwd={ScopeRoot}). " +
+            "Agent must CLAIM_TASK before writing.",
+            operationName, _agentId, ResolveScopeRoot());
+
+        return "Error: Cannot " + operationName + " from the develop checkout. " +
+               "Call CLAIM_TASK <taskId> first to provision a per-task worktree, " +
+               "then retry on your next turn. (P1.9 blocker D enforcement: writes from the main " +
+               "room are blocked because they would contaminate develop with parallel-task work.)";
+    }
+
     private async Task<bool> StageFileAsync(string projectRoot, string relativePath)
     {
         try
@@ -304,6 +402,10 @@ internal sealed class CodeWriteToolWrapper
 
         if (message.Length > 5000)
             return "Error: Commit message exceeds 5000 characters.";
+
+        var worktreeRefusal = TryRefuseMainCheckoutWrite("commit_changes");
+        if (worktreeRefusal is not null)
+            return worktreeRefusal;
 
         var projectRoot = ResolveScopeRoot();
 

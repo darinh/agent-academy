@@ -162,6 +162,11 @@ public static class AgentPipelineExtensions
         services.AddSingleton<IBreakoutLifecycleService>(sp => sp.GetRequiredService<BreakoutLifecycleService>());
         services.AddSingleton<TaskAssignmentHandler>();
         services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
+        // P1.9 blocker D: per-agent workspace resolver routes claimed-task work
+        // into the task's worktree so write_file/commit_changes don't contaminate
+        // develop. Scoped because it reads the per-scope DbContext.
+        services.AddScoped<AgentWorkspaceResolver>();
+        services.AddScoped<IAgentWorkspaceResolver>(sp => sp.GetRequiredService<AgentWorkspaceResolver>());
         services.AddSingleton<AgentTurnRunner>();
         services.AddSingleton<IAgentTurnRunner>(sp => sp.GetRequiredService<AgentTurnRunner>());
         services.AddSingleton<ConversationRoundRunner>();

@@ -26,7 +26,12 @@ public sealed class CodeWriteToolWrapperTests : IDisposable
             _sp.GetRequiredService<IServiceScopeFactory>(),
             NullLogger.Instance,
             "test-agent", "TestAgent",
-            new AgentGitIdentity("Test Agent", "test@agent.local"));
+            new AgentGitIdentity("Test Agent", "test@agent.local"),
+            // Tests target validation/path-handling logic and run against
+            // the develop checkout (no scopeRoot). The P1.9 blocker D
+            // worktree-requirement is exercised separately in
+            // WorktreeIsolationTests; opt out here.
+            requireWorktree: false);
     }
 
     public void Dispose() => _sp.Dispose();
