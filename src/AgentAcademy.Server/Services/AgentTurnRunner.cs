@@ -63,6 +63,7 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
         string? promptSuffix = null,
         string? specVersion = null,
         string? sprintId = null,
+        string? workspacePath = null,
         CancellationToken cancellationToken = default)
     {
         var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
@@ -90,7 +91,7 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
                 agent, room, specContext, taskItems, memories, dms, sessionSummary, sprintPreamble, specVersion);
             if (promptSuffix is not null) prompt += promptSuffix;
 
-            response = await RunAgentAsync(agent, prompt, roomId, cts.Token, turnId);
+            response = await RunAgentAsync(agent, prompt, roomId, cts.Token, turnId, workspacePath);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -124,7 +125,7 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
 
         if (isNonPass)
         {
-            await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response);
+            await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response, workspacePath);
             foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
                 await _taskAssignmentHandler.ProcessAssignmentAsync(scope, agent, roomId, assignment);
         }
@@ -165,9 +166,10 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
     /// and posts command results as a system message for context visibility.
     /// </summary>
     private async Task ProcessAndPostAgentResponseAsync(
-        IMessageService messageService, AgentDefinition agent, string roomId, string response)
+        IMessageService messageService, AgentDefinition agent, string roomId, string response,
+        string? workspacePath = null)
     {
-        var pipelineResult = await ProcessCommandsAsync(agent, response, roomId);
+        var pipelineResult = await ProcessCommandsAsync(agent, response, roomId, workspacePath);
 
         var textToPost = pipelineResult.RemainingText;
         if (!string.IsNullOrWhiteSpace(textToPost) && !AgentResponseParser.IsPassResponse(textToPost))

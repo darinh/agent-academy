@@ -135,6 +135,24 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
 
             var ctx = await contextLoader.LoadAsync(roomId);
 
+            // Resolve the room's workspace path once per round so it can be
+            // threaded into every agent turn this round runs. This is the
+            // upstream half of P1.9 blocker B's fix: without this, every
+            // RunAgentTurnAsync call passes workspacePath=null and the SDK
+            // tool wrappers fall back to FindProjectRoot()=develop checkout,
+            // bypassing the worktree-isolation plumbing PR #169 added below.
+            // Lookup is a single indexed FindAsync; safe to do per round.
+            //
+            // No try/catch on purpose (codex review): if the workspace lookup
+            // throws, fail closed by letting the exception propagate. The
+            // alternative (catch + null fallback) would silently route writes
+            // to the develop checkout under transient DB failures —
+            // re-introducing the exact P1.9 blocker B regression. A "no
+            // workspace" room legitimately returns null without throwing
+            // (RoomService.GetWorkspacePathForRoomAsync handles that
+            // path internally), so this only fires on real DB errors.
+            var roomWorkspacePath = await roomService.GetWorkspacePathForRoomAsync(roomId);
+
             // ── Planner phase ──
             var planner = FindPlanner();
             if (planner is not null)
@@ -165,7 +183,7 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                 var plannerResult = await _turnRunner.RunAgentTurnAsync(
                     planner, scope, messageService, configService, activity,
                     freshRoom, roomId, ctx.SpecContext, taskItems, ctx.SessionSummary, ctx.SprintPreamble, plannerSuffix, ctx.SpecVersion,
-                    sprintIdAtRunStart, cancellationToken);
+                    sprintIdAtRunStart, roomWorkspacePath, cancellationToken);
 
                 if (plannerResult.IsNonPass)
                 {
@@ -204,7 +222,7 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                     catalogAgent, scope, messageService, configService, activity,
                     currentRoom, roomId, ctx.SpecContext,
                     sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion,
-                    sprintId: sprintIdAtRunStart, cancellationToken: cancellationToken);
+                    sprintId: sprintIdAtRunStart, workspacePath: roomWorkspacePath, cancellationToken: cancellationToken);
 
                 if (result.IsNonPass) hadNonPassResponse = true;
             }

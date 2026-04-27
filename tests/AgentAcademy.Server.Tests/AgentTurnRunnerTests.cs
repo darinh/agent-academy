@@ -1294,4 +1294,56 @@ public class AgentTurnRunnerTests : IDisposable
 
         Assert.Equal(response, result.Response);
     }
+
+    // ── WORKSPACE PATH THREADING (P1.9 BLOCKER B UPSTREAM WIRING) ──
+
+    /// <summary>
+    /// P1.9 blocker B regression: when a caller (ConversationRoundRunner,
+    /// DirectMessageRouter) passes a workspacePath, it must reach the
+    /// executor so the SDK tool wrappers (write_file, commit_changes, etc.)
+    /// resolve their scopeRoot to the worktree, not the develop checkout.
+    /// Before this fix RunAgentTurnAsync had no workspacePath parameter at
+    /// all, so PR #169's wrapper-layer fix was inert in conversation rounds.
+    /// </summary>
+    [Fact]
+    public async Task RunAgentTurnAsync_ThreadsWorkspacePath_ToExecutor()
+    {
+        var agent = TestAgent();
+        string? capturedWorkspacePath = "<not-called>";
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
+            .Returns(callInfo =>
+            {
+                capturedWorkspacePath = callInfo.ArgAt<string?>(3);
+                return Task.FromResult("ok");
+            });
+
+        var scope = CreateMockScope();
+        var expected = "/tmp/some-worktree-path";
+        await _runner.RunAgentTurnAsync(
+            agent, scope, _messageService, _configService, _activityPublisher,
+            TestRoom(), "room-1", null,
+            workspacePath: expected);
+
+        Assert.Equal(expected, capturedWorkspacePath);
+    }
+
+    [Fact]
+    public async Task RunAgentTurnAsync_NullWorkspacePath_PassesNull_PreservingMainRoomBehaviour()
+    {
+        var agent = TestAgent();
+        string? capturedWorkspacePath = "<sentinel>";
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
+            .Returns(callInfo =>
+            {
+                capturedWorkspacePath = callInfo.ArgAt<string?>(3);
+                return Task.FromResult("ok");
+            });
+
+        var scope = CreateMockScope();
+        await _runner.RunAgentTurnAsync(
+            agent, scope, _messageService, _configService, _activityPublisher,
+            TestRoom(), "room-1", null);
+
+        Assert.Null(capturedWorkspacePath);
+    }
 }

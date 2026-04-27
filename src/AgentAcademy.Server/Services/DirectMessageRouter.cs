@@ -92,10 +92,20 @@ public sealed class DirectMessageRouter : IDirectMessageRouter
 
         var ctx = await contextLoader.LoadAsync(roomId);
 
+        // Resolve room workspace path so file-touching tools (write_file,
+        // read_file, structured handlers) operate against the room's
+        // workspace checkout rather than falling through to develop. P1.9
+        // blocker B upstream wiring — same rationale as ConversationRoundRunner.
+        // No try/catch: fail closed on real DB errors so transient failures
+        // don't silently route writes to the develop checkout (the exact
+        // P1.9 blocker B regression). "No workspace" returns null naturally.
+        var roomWorkspacePath = await roomService.GetWorkspacePathForRoomAsync(roomId);
+
         await _turnRunner.RunAgentTurnAsync(
             catalogAgent, scope, messageService, configService, activity,
             room, roomId, ctx.SpecContext,
-            sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
+            sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion,
+            workspacePath: roomWorkspacePath);
 
         _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
     }
