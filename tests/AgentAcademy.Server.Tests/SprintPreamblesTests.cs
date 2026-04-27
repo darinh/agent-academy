@@ -257,4 +257,62 @@ public class SprintPreamblesTests
 
         Assert.Contains("Goal card content is automatically included in the PR description", preamble);
     }
+
+    // ── STORE_ARTIFACT JSON schema visibility ────────────────────
+    // Regression: Sprint #14 stalled in Intake because the planner kept
+    // submitting markdown for RequirementsDocument / SprintPlan /
+    // ValidationReport / SprintReport, which the validator rejects with
+    // VALIDATION errors. The Intake/Planning/Validation/FinalSynthesis
+    // preambles must surface the actual JSON schema (not free-form
+    // `Content=<the document>`) so agents can produce a valid payload
+    // on the first attempt.
+    //
+    // The expected JSON strings below are the EXACT schema fragments
+    // returned by SprintArtifactService.GetSchemaHint. If GetSchemaHint
+    // changes, update both — the test exists to keep the preamble
+    // contract and the validator contract synchronised.
+
+    [Theory]
+    [InlineData(
+        "Intake",
+        "RequirementsDocument",
+        """{"Title":"...","Description":"...","InScope":["...","..."],"OutOfScope":["...","..."]}""")]
+    [InlineData(
+        "Planning",
+        "SprintPlan",
+        """{"Summary":"...","Phases":[{"Name":"...","Description":"...","Deliverables":["...","..."]}],"OverflowRequirements":["..."]}""")]
+    [InlineData(
+        "Validation",
+        "ValidationReport",
+        """{"Verdict":"...","Findings":["...","..."],"RequiredChanges":["..."]}""")]
+    [InlineData(
+        "FinalSynthesis",
+        "SprintReport",
+        """{"Summary":"...","Delivered":["...","..."],"Learnings":["...","..."],"OverflowRequirements":["..."]}""")]
+    public void BuildPreamble_StoreArtifactStages_ShowExactJsonSchema(
+        string stage, string artifactType, string expectedSchema)
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, stage);
+
+        Assert.Contains($"Type: {artifactType}", preamble);
+        Assert.Contains(expectedSchema, preamble);
+        Assert.Contains("valid JSON", preamble);
+        // Guard against the regression that started this fix: free-form
+        // "Content=<the document>" / "Content=<plan ...>" instructions
+        // must NOT appear, otherwise agents fall back to markdown.
+        Assert.DoesNotContain("Content=<", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_FinalSynthesis_OverflowRequirementsRemainsFreeForm()
+    {
+        // OverflowRequirements is the one artifact the validator does NOT
+        // schema-check (SprintArtifactService.ValidateArtifactContent
+        // returns early). The preamble must say so, otherwise the planner
+        // wastes rounds trying to JSON-encode plain prose.
+        var preamble = SprintPreambles.BuildPreamble(1, "FinalSynthesis");
+
+        Assert.Contains("Type: OverflowRequirements", preamble);
+        Assert.Contains("free-form", preamble);
+    }
 }

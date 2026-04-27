@@ -42,7 +42,17 @@ public static class SprintPreambles
                 **HOW TO ADVANCE (Planner only — Aristotle):**
                 1. When the human has provided enough information that requirements are clear
                    (or explicitly says to proceed), synthesize them into a RequirementsDocument.
-                2. Run: `STORE_ARTIFACT: Type=RequirementsDocument Content=<the document>`
+                2. Submit (Content MUST be valid JSON matching this exact schema —
+                   do NOT wrap in code fences, do NOT pass markdown, do NOT add other fields):
+                   ```
+                   STORE_ARTIFACT:
+                     Type: RequirementsDocument
+                     Content: {"Title":"...","Description":"...","InScope":["...","..."],"OutOfScope":["...","..."]}
+                   ```
+                   All four fields are required: `Title` and `Description` are non-empty strings;
+                   `InScope` and `OutOfScope` are non-empty arrays of strings. Any prose,
+                   rationale, background, or formatting belongs INSIDE the `Description` string —
+                   not outside the JSON. Escape inner quotes (`\"`) and newlines (`\n`).
                 3. Then run: `ADVANCE_STAGE:` — this requires human sign-off; wait for approval.
                 Do not ask permission to draft the requirements — drafting IS your job. Only the
                 ADVANCE_STAGE call needs the artifact gate satisfied first.
@@ -57,8 +67,17 @@ public static class SprintPreambles
 
                 **HOW TO ADVANCE (Planner only — Aristotle):**
                 1. Collaborate with the team on task breakdown, then synthesize the plan.
-                2. Run: `STORE_ARTIFACT: Type=SprintPlan Content=<plan including task list,
-                   assignments, deps, risks>`
+                2. Submit (Content MUST be valid JSON matching this exact schema —
+                   do NOT wrap in code fences, do NOT pass markdown):
+                   ```
+                   STORE_ARTIFACT:
+                     Type: SprintPlan
+                     Content: {"Summary":"...","Phases":[{"Name":"...","Description":"...","Deliverables":["...","..."]}],"OverflowRequirements":["..."]}
+                   ```
+                   Required: `Summary` (non-empty string), `Phases` (non-empty array). Each phase
+                   requires `Name`, `Description`, and a non-empty `Deliverables` array.
+                   `OverflowRequirements` is optional. Task lists, assignments, deps, and risks go
+                   INSIDE the relevant `Description` strings — escape `\"` and `\n` as needed.
                 3. Then run: `ADVANCE_STAGE:` — this requires human sign-off.
                 """,
 
@@ -84,8 +103,17 @@ public static class SprintPreambles
 
                 **HOW TO ADVANCE (Planner only — Aristotle):**
                 1. Once reviewers have weighed in, synthesize the findings.
-                2. Run: `STORE_ARTIFACT: Type=ValidationReport Content=<findings, blockers,
-                   go/no-go recommendation>`
+                2. Submit (Content MUST be valid JSON matching this exact schema —
+                   do NOT wrap in code fences, do NOT pass markdown):
+                   ```
+                   STORE_ARTIFACT:
+                     Type: ValidationReport
+                     Content: {"Verdict":"...","Findings":["...","..."],"RequiredChanges":["..."]}
+                   ```
+                   Required: `Verdict` (non-empty string — e.g. "Go", "NoGo", "GoWithCaveats")
+                   and `Findings` (non-empty array of strings). `RequiredChanges` is optional.
+                   Blockers and go/no-go rationale belong inside `Findings` entries; escape
+                   inner quotes (`\"`) and newlines (`\n`).
                 3. Then run: `ADVANCE_STAGE:` to enter Implementation. No human sign-off.
                 """,
 
@@ -190,10 +218,24 @@ public static class SprintPreambles
                 artifact.
 
                 **HOW TO COMPLETE (Planner only — Aristotle):**
-                1. If incomplete work exists, run:
-                   `STORE_ARTIFACT: Type=OverflowRequirements Content=<remaining items>`
-                2. Run: `STORE_ARTIFACT: Type=SprintReport Content=<outcomes, lessons,
-                   overflow summary>`
+                1. If incomplete work exists, submit (OverflowRequirements is the ONE
+                   free-form artifact — Content may be any non-empty string, no JSON required):
+                   ```
+                   STORE_ARTIFACT:
+                     Type: OverflowRequirements
+                     Content: <plain text or markdown listing remaining items>
+                   ```
+                2. Submit the SprintReport (Content MUST be valid JSON matching this exact schema —
+                   do NOT wrap in code fences, do NOT pass markdown):
+                   ```
+                   STORE_ARTIFACT:
+                     Type: SprintReport
+                     Content: {"Summary":"...","Delivered":["...","..."],"Learnings":["...","..."],"OverflowRequirements":["..."]}
+                   ```
+                   Required: `Summary` (non-empty string), `Delivered` (non-empty array), and
+                   `Learnings` (non-empty array). `OverflowRequirements` is optional.
+                   Outcomes, lessons, and overflow summary go inside the relevant fields;
+                   escape `\"` and `\n` as needed.
                 3. Then run: `COMPLETE_SPRINT:` to finalize. The next sprint will auto-start
                    if scheduling is enabled and will inherit any overflow you stored.
                 """,
