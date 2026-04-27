@@ -79,6 +79,7 @@ public class CopilotExecutorExcludedToolsTests
     [Theory]
     [InlineData("write_file")]
     [InlineData("edit")]
+    [InlineData("create")]
     [InlineData("create_file")]
     [InlineData("delete_file")]
     [InlineData("str_replace_editor")]
@@ -86,6 +87,31 @@ public class CopilotExecutorExcludedToolsTests
     public void ExcludedSdkBuiltinTools_Includes_WriteFamilyTool(string toolName)
     {
         Assert.Contains(toolName, CopilotExecutor.ExcludedSdkBuiltinTools);
+    }
+
+    // Sprint #12 (2026-04-27) regression guard: software-engineer-1
+    // burned its entire Implementation stage thrashing on the SDK shell
+    // session-control family (write_bash/read_bash/list_bash/stop_bash)
+    // and never reached claim_task/write_file/commit_changes. They wrap
+    // the same Kind=shell permission as `bash` and must stay excluded.
+    [Theory]
+    [InlineData("write_bash")]
+    [InlineData("read_bash")]
+    [InlineData("list_bash")]
+    [InlineData("stop_bash")]
+    public void ExcludedSdkBuiltinTools_Includes_ShellSessionTool(string toolName)
+    {
+        Assert.Contains(toolName, CopilotExecutor.ExcludedSdkBuiltinTools);
+    }
+
+    // Subagent launch (`task`) bypasses the entire room/breakout/worktree
+    // orchestration; child agents do not respect the structured command
+    // discipline. Excluded so the model coordinates through CLAIM_TASK +
+    // room messages instead of forking opaque sub-conversations.
+    [Fact]
+    public void ExcludedSdkBuiltinTools_Includes_SubagentLauncher()
+    {
+        Assert.Contains("task", CopilotExecutor.ExcludedSdkBuiltinTools);
     }
 
     [Fact]
