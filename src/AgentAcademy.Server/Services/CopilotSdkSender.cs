@@ -36,7 +36,6 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
     private readonly IAgentQuotaService _quotaService;
     private readonly IActivityBroadcaster _activityBus;
     private readonly IAgentLivenessTracker _livenessTracker;
-
     public CopilotSdkSender(
         ILogger<CopilotSdkSender> logger,
         ILlmUsageTracker usageTracker,
@@ -141,11 +140,20 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
         var done = new TaskCompletionSource();
         AssistantUsageEvent? capturedUsage = null;
 
+        // Track per-call timing so we can report tool_complete with elapsed_ms.
+        // The SDK fires execution events from its own scheduler — guard the
+        // dictionary access with a thread-safe collection so concurrent
+        // start/complete callbacks don't race.
+        var toolStarts = new System.Collections.Concurrent.ConcurrentDictionary<string, (string ToolName, long StartedAtTicks)>(StringComparer.Ordinal);
+
         // Capture turnId + tracker into the lambda explicitly. AsyncLocal is
         // not safe across SDK callback threads — the SDK fires events from
         // its own scheduler and the ExecutionContext may not flow.
         var capturedTurnId = turnId;
         var tracker = _livenessTracker;
+        var logger = _logger;
+        var loggerAgentId = agentId;
+        var loggerSessionId = session.SessionId;
 
         // Link the SDK session id → turnId so the permission handler closure
         // (which only sees invocation.SessionId) can attribute denials/approvals
@@ -178,6 +186,18 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
                 case AssistantUsageEvent usage:
                     capturedUsage = usage;
                     if (capturedTurnId is not null) tracker.NoteProgress(capturedTurnId, "usage");
+                    break;
+                case ToolExecutionStartEvent toolStart:
+                    OnToolStart(toolStart, toolStarts, logger, loggerAgentId, loggerSessionId, tracker, capturedTurnId);
+                    break;
+                case ToolExecutionProgressEvent toolProgress:
+                    OnToolProgress(toolProgress, logger, loggerAgentId, loggerSessionId, tracker, capturedTurnId);
+                    break;
+                case ToolExecutionCompleteEvent toolComplete:
+                    OnToolComplete(toolComplete, toolStarts, logger, loggerAgentId, loggerSessionId, tracker, capturedTurnId);
+                    break;
+                case SessionWarningEvent warning:
+                    OnSessionWarning(warning, logger, loggerAgentId, loggerSessionId, tracker, capturedTurnId);
                     break;
                 case SessionIdleEvent:
                     done.TrySetResult();
@@ -288,5 +308,152 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
             agent.Id, response.Length);
 
         return response;
+    }
+
+    // ── Tool-execution diagnostic event handlers ────────────────
+    //
+    // These callbacks are fired by the SDK from its own scheduler. They are
+    // observability-only — they do not gate behaviour, mutate session state,
+    // or throw. Any exception inside the callback would propagate to the
+    // SDK's event loop and disrupt the turn, so each handler is wrapped in
+    // a defensive try/catch that demotes failures to warnings.
+
+    private static void OnToolStart(
+        ToolExecutionStartEvent evt,
+        System.Collections.Concurrent.ConcurrentDictionary<string, (string ToolName, long StartedAtTicks)> inflight,
+        ILogger logger,
+        string agentId,
+        string sessionId,
+        IAgentLivenessTracker tracker,
+        string? turnId)
+    {
+        try
+        {
+            var data = evt.Data;
+            var callId = data.ToolCallId;
+            if (!string.IsNullOrEmpty(callId))
+            {
+                inflight[callId] = (data.ToolName ?? "(unknown)", System.Diagnostics.Stopwatch.GetTimestamp());
+            }
+
+            // Mark progress on the turn so the watchdog doesn't kill agents
+            // mid-tool. A long-running tool (e.g. RUN_TESTS) used to look
+            // identical to a hung agent because no AssistantMessageDelta
+            // events flow during tool execution.
+            if (!string.IsNullOrEmpty(turnId))
+            {
+                tracker.NoteProgress(turnId, $"tool_start:{data.ToolName}");
+            }
+
+            // IsEnabled gate — DescribeStart redacts and truncates which
+            // costs allocations; skip it when the sink is disabled.
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "[ToolDiag] agent={AgentId} session={SessionId} {Detail}",
+                    agentId, sessionId, ToolEventDescriber.DescribeStart(data));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Tool-start diagnostic handler threw");
+        }
+    }
+
+    private static void OnToolProgress(
+        ToolExecutionProgressEvent evt,
+        ILogger logger,
+        string agentId,
+        string sessionId,
+        IAgentLivenessTracker tracker,
+        string? turnId)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(turnId))
+            {
+                tracker.NoteProgress(turnId, "tool_progress");
+            }
+
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug(
+                    "[ToolDiag] agent={AgentId} session={SessionId} {Detail}",
+                    agentId, sessionId, ToolEventDescriber.DescribeProgress(evt.Data));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Tool-progress diagnostic handler threw");
+        }
+    }
+
+    private static void OnToolComplete(
+        ToolExecutionCompleteEvent evt,
+        System.Collections.Concurrent.ConcurrentDictionary<string, (string ToolName, long StartedAtTicks)> inflight,
+        ILogger logger,
+        string agentId,
+        string sessionId,
+        IAgentLivenessTracker tracker,
+        string? turnId)
+    {
+        try
+        {
+            var data = evt.Data;
+            long? elapsedMs = null;
+            if (!string.IsNullOrEmpty(data.ToolCallId)
+                && inflight.TryRemove(data.ToolCallId, out var startInfo))
+            {
+                elapsedMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(startInfo.StartedAtTicks).TotalMilliseconds;
+            }
+
+            if (!string.IsNullOrEmpty(turnId))
+            {
+                tracker.NoteProgress(turnId, $"tool_complete:success={data.Success}");
+            }
+
+            // Failed tool calls log at Warning; successful ones at Info so
+            // they're not silenced by the default minimum level on prod.
+            var level = data.Success ? LogLevel.Information : LogLevel.Warning;
+            if (logger.IsEnabled(level))
+            {
+                logger.Log(
+                    level,
+                    "[ToolDiag] agent={AgentId} session={SessionId} {Detail}",
+                    agentId, sessionId, ToolEventDescriber.DescribeComplete(data, elapsedMs));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Tool-complete diagnostic handler threw");
+        }
+    }
+
+    private static void OnSessionWarning(
+        SessionWarningEvent evt,
+        ILogger logger,
+        string agentId,
+        string sessionId,
+        IAgentLivenessTracker tracker,
+        string? turnId)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(turnId))
+            {
+                tracker.NoteProgress(turnId, "session_warning");
+            }
+
+            // Always log warnings — the SDK only fires this event when the
+            // host needs to know something. Suppressing it would defeat
+            // the observability purpose.
+            logger.LogWarning(
+                "[ToolDiag] agent={AgentId} session={SessionId} {Detail}",
+                agentId, sessionId, ToolEventDescriber.DescribeWarning(evt.Data));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Session-warning diagnostic handler threw");
+        }
     }
 }
