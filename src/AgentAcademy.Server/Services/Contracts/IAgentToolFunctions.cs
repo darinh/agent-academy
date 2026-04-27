@@ -36,7 +36,9 @@ public interface IAgentToolFunctions
 
     /// <summary>
     /// Creates AIFunction instances for the "code-write" tool group.
-    /// When <paramref name="workspacePath"/> is provided the wrapper writes and
+    /// Writes are permitted under <c>src/</c> and <c>tests/</c> (production
+    /// code plus the test fixtures that ship with it). When
+    /// <paramref name="workspacePath"/> is provided the wrapper writes and
     /// commits inside that worktree instead of the develop checkout.
     /// </summary>
     IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null, string? workspacePath = null);
