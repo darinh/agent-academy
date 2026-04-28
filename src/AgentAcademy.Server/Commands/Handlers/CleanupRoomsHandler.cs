@@ -29,17 +29,26 @@ public sealed class CleanupRoomsHandler : ICommandHandler
         }
 
         var lifecycle = context.Services.GetRequiredService<IRoomLifecycleService>();
-        var count = await lifecycle.CleanupStaleRoomsAsync();
+        var result = await lifecycle.CleanupStaleRoomsDetailedAsync();
 
         return command with
         {
             Status = CommandStatus.Success,
             Result = new Dictionary<string, object?>
             {
-                ["archivedCount"] = count,
-                ["message"] = count > 0
-                    ? $"Archived {count} stale room(s) where all tasks were complete."
-                    : "No stale rooms found to clean up."
+                ["archivedCount"] = result.ArchivedCount,
+                ["skippedCount"] = result.SkippedCount,
+                ["perRoomSkipReasons"] = result.Skips.Select(s => new Dictionary<string, object?>
+                {
+                    ["roomId"] = s.RoomId,
+                    ["roomName"] = s.RoomName,
+                    ["reason"] = s.ReasonWireValue,
+                }).ToList(),
+                ["message"] = result.ArchivedCount > 0
+                    ? $"Archived {result.ArchivedCount} stale room(s) where all tasks were complete; held back {result.SkippedCount} candidate(s)."
+                    : result.SkippedCount > 0
+                        ? $"No stale rooms archived; held back {result.SkippedCount} candidate(s) — see perRoomSkipReasons."
+                        : "No stale rooms found to clean up."
             }
         };
     }

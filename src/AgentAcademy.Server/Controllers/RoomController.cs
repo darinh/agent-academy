@@ -257,14 +257,26 @@ public class RoomController : ControllerBase
 
     /// <summary>
     /// POST /api/rooms/cleanup — archive stale rooms where all tasks are complete.
+    /// Returns archived count plus per-room skip reasons so a result of
+    /// <c>archivedCount=0</c> is debuggable without reading server logs.
     /// </summary>
     [HttpPost("cleanup")]
     public async Task<ActionResult> CleanupStaleRooms([FromServices] IRoomLifecycleService lifecycleService)
     {
         try
         {
-            var count = await lifecycleService.CleanupStaleRoomsAsync();
-            return Ok(new { archivedCount = count });
+            var result = await lifecycleService.CleanupStaleRoomsDetailedAsync();
+            return Ok(new
+            {
+                archivedCount = result.ArchivedCount,
+                skippedCount = result.SkippedCount,
+                perRoomSkipReasons = result.Skips.Select(s => new
+                {
+                    roomId = s.RoomId,
+                    roomName = s.RoomName,
+                    reason = s.ReasonWireValue,
+                }),
+            });
         }
         catch (Exception ex)
         {
