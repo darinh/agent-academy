@@ -97,6 +97,22 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<SprintScheduleService>();
         services.AddScoped<ISprintScheduleService>(sp => sp.GetRequiredService<SprintScheduleService>());
 
+        // Terminal-stage ceremony driver — fires self-eval / advance /
+        // complete on natural sprint progression. Wired as scoped because it
+        // depends on scoped DB-bound services. Invoked from
+        // ConversationRoundRunner via IServiceScopeFactory.
+        // See sprint-terminal-stage-handler-design.md.
+        services.AddScoped<SprintTerminalStageHandler>();
+        services.AddScoped<ISprintTerminalStageHandler>(sp =>
+            sp.GetRequiredService<SprintTerminalStageHandler>());
+
+        // Wake-orchestrator helper — extracted from SprintController so the
+        // controller endpoint AND the terminal-stage driver share one
+        // implementation. Scoped because it uses the scoped DbContext.
+        services.AddScoped<OrchestratorWakeService>();
+        services.AddScoped<IOrchestratorWakeService>(sp =>
+            sp.GetRequiredService<OrchestratorWakeService>());
+
         // Round context loading (extracted from AgentOrchestrator)
         services.AddScoped<RoundContextLoader>();
 

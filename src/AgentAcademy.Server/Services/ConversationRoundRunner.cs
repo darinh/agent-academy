@@ -326,15 +326,66 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
 
         var roundOutcome = new RoundRunOutcome(anyRoundHadNonPass, innerRoundsExecuted);
 
+        // Terminal-stage check: if the team has finished implementation work
+        // and the ceremony chain can advance, fire the next transition. Runs
+        // BEFORE the self-drive decision; if the driver took ANY action
+        // (including Block), self-drive is skipped because (a)
+        // StartedSelfEval/AdvancedToFinal/SteeredToFinal already woke the
+        // rooms, so a continuation enqueue is redundant; (b) more importantly,
+        // scheduling a continuation could trip the stage round cap
+        // (Implementation: 20/20) immediately after StartedSelfEval, blocking
+        // the just-started ceremony before the agent can produce the report.
+        // See sprint-terminal-stage-handler-design.md §4.4 — the conditional
+        // skip is critical, not optional. Fail-open inside the helper.
+        var terminalAction = TerminalStageAction.NoOp;
+        if (sprintIdAtRunStart is not null)
+        {
+            terminalAction = await InvokeTerminalStageHandlerAsync(
+                sprintIdAtRunStart, CancellationToken.None);
+        }
+
         // P1.2 §13 step 7–9: self-drive decision. Run AFTER the counter
         // bump so the decision service reads freshly-persisted counters.
         // Pass CancellationToken.None — the trigger CT is about to be
         // disposed; the decision service owns its own lifetime via the
-        // orchestrator. Fail-open inside the helper.
-        await InvokeSelfDriveDecisionAsync(
-            roomId, sprintIdAtRunStart, roundOutcome, CancellationToken.None);
+        // orchestrator. Fail-open inside the helper. SKIP when the terminal
+        // handler already steered the sprint (see comment above).
+        if (terminalAction == TerminalStageAction.NoOp)
+        {
+            await InvokeSelfDriveDecisionAsync(
+                roomId, sprintIdAtRunStart, roundOutcome, CancellationToken.None);
+        }
 
         return roundOutcome;
+    }
+
+    /// <summary>
+    /// Internal helper: invoke the terminal-stage handler after the counter
+    /// bump and before the self-drive decision. Wrapped in a fail-open
+    /// try/catch — a handler crash MUST NOT propagate; the round trigger has
+    /// already succeeded. On any unexpected failure returns
+    /// <see cref="TerminalStageAction.NoOp"/> so the self-drive decision still
+    /// runs (safe-side default — preserves pre-driver behaviour when the
+    /// driver itself is unavailable).
+    /// </summary>
+    private async Task<TerminalStageAction> InvokeTerminalStageHandlerAsync(
+        string capturedSprintId, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var handler = scope.ServiceProvider.GetService<ISprintTerminalStageHandler>();
+            if (handler is null) return TerminalStageAction.NoOp;
+            return await handler.AdvanceIfReadyAsync(capturedSprintId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Terminal-stage handler invocation failed for sprint {SprintId}; " +
+                "self-drive decision will run as if NoOp",
+                capturedSprintId);
+            return TerminalStageAction.NoOp;
+        }
     }
 
     /// <summary>

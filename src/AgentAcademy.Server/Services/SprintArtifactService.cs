@@ -158,6 +158,51 @@ public sealed class SprintArtifactService : ISprintArtifactService
             .FirstOrDefaultAsync();
     }
 
+    /// <summary>
+    /// Returns the <c>OverallVerdict</c> of the most recent
+    /// <c>SelfEvaluationReport</c> artifact for a sprint, or <c>null</c> if
+    /// none stored / unparseable. Mirrors the query semantics of the
+    /// Implementation→FinalSynthesis verdict gate in
+    /// <see cref="SprintStageService"/> so the terminal-stage driver and the
+    /// gate cannot disagree about which report is "latest". See design §6.1.
+    /// </summary>
+    public async Task<SelfEvaluationOverallVerdict?> GetLatestSelfEvalVerdictAsync(
+        string sprintId, CancellationToken ct = default)
+    {
+        var reportType = nameof(ArtifactType.SelfEvaluationReport);
+        var latestContent = await _db.SprintArtifacts
+            .Where(a => a.SprintId == sprintId && a.Type == reportType)
+            .OrderByDescending(a => a.CreatedAt)
+            .ThenByDescending(a => a.Id)
+            .Select(a => a.Content)
+            .FirstOrDefaultAsync(ct);
+
+        if (latestContent is null) return null;
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<SelfEvaluationReport>(
+                latestContent,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return parsed?.OverallVerdict;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if at least one artifact matching the
+    /// (sprint, stage, type) tuple is stored. Used by the terminal-stage
+    /// driver to detect <c>SprintReport</c> at FinalSynthesis without
+    /// loading content. See design §6.1.
+    /// </summary>
+    public Task<bool> HasArtifactAsync(
+        string sprintId, string stage, string type, CancellationToken ct = default) =>
+        _db.SprintArtifacts.AnyAsync(
+            a => a.SprintId == sprintId && a.Stage == stage && a.Type == type, ct);
+
     // ── Self-Evaluation Verdict Path (P1.4) ─────────────────────
 
     /// <summary>
@@ -283,6 +328,16 @@ public sealed class SprintArtifactService : ISprintArtifactService
             sprint.LastSelfEvalAt = now;
             sprint.LastSelfEvalVerdict = verdictStr;
             sprint.SelfEvaluationInFlight = keepInFlight;
+            // Terminal-stage driver coordination (design §6.2):
+            // The driver stamps SelfEvalStartedAt when it fires StartedSelfEval.
+            // On AllPass, the chain has progressed — clear the marker so the
+            // next StartedSelfEval (if any) starts a fresh stall window.
+            // On AnyFail/Unverified, leave the marker set; the driver will
+            // RE-stamp it on the next StartedSelfEval after the team re-attempts.
+            if (keepInFlight)  // AllPass
+            {
+                sprint.SelfEvalStartedAt = null;
+            }
             if (blockedThisRun)
             {
                 sprint.BlockedAt = now;

@@ -70,6 +70,39 @@ public class SprintEntity
     /// </summary>
     public string? LastSelfEvalVerdict { get; set; }
 
+    // Terminal-stage ceremony tracking
+    // (specs/100-product-vision/sprint-terminal-stage-handler-design.md §6.2).
+    // Both columns are additive 🟢 — defaults are null; existing rows backfill
+    // cleanly with no schema migration data step. The §6.6 SQL backfill in the
+    // migration repairs historical Completed sprints that have a non-terminal
+    // currentStage (Sprint #11 documented in §1).
+
+    /// <summary>
+    /// Wall-clock timestamp of FIRST entry to FinalSynthesis. Set-once,
+    /// never cleared (preserved across completion / cancellation as an audit
+    /// signal: "how long did sprint X spend in FinalSynthesis"). Set by
+    /// <see cref="AgentAcademy.Server.Services.SprintStageService.AdvanceStageAsync"/>
+    /// when transitioning into FinalSynthesis, and by
+    /// <see cref="AgentAcademy.Server.Services.SprintService.CompleteSprintAsync"/>
+    /// when <c>force=true</c> leaps from a non-terminal stage. Used by the
+    /// terminal-stage driver's FinalSynthesis stall watchdog.
+    /// </summary>
+    public DateTime? FinalSynthesisEnteredAt { get; set; }
+
+    /// <summary>
+    /// Wall-clock timestamp of the most recent driver-initiated
+    /// <c>StartedSelfEval</c> action. Set by the terminal-stage driver when
+    /// transitioning <c>ReadyForSelfEval → SelfEvalInFlight</c>; cleared by
+    /// the P1.4 verdict path in
+    /// <see cref="AgentAcademy.Server.Services.SprintArtifactService"/> ONLY
+    /// when <c>OverallVerdict=AllPass</c> (chain has progressed). On
+    /// AnyFail/Unverified verdicts the value is left set, then RE-stamped on
+    /// the next <c>StartedSelfEval</c> after the team re-attempts (giving
+    /// each attempt a fresh stall window). Used by the self-eval stall
+    /// watchdog alongside <see cref="LastSelfEvalAt"/>.
+    /// </summary>
+    public DateTime? SelfEvalStartedAt { get; set; }
+
     // Navigation
     public SprintEntity? OverflowFromSprint { get; set; }
 }

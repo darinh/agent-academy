@@ -129,6 +129,39 @@ public sealed class TaskQueryService : ITaskQueryService
     }
 
     /// <summary>
+    /// Single-query snapshot of a sprint's task statuses for the terminal-stage
+    /// driver. The terminal set <c>{Completed, Cancelled}</c> mirrors
+    /// <c>RoomLifecycleService.TerminalTaskStatuses</c> — keep in lockstep so
+    /// the driver and <c>SprintStageService.CheckImplementationPrerequisitesAsync</c>
+    /// classify "all done" identically. See design §6.3.
+    /// </summary>
+    public async Task<SprintTaskStatusSnapshot> GetSprintTaskStatusSnapshotAsync(
+        string sprintId, CancellationToken ct = default)
+    {
+        var cancelled = nameof(Shared.Models.TaskStatus.Cancelled);
+        var completed = nameof(Shared.Models.TaskStatus.Completed);
+
+        var counts = await _db.Tasks
+            .Where(t => t.SprintId == sprintId)
+            .GroupBy(t => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                NonCancelled = g.Count(t => t.Status != cancelled),
+                NonTerminal = g.Count(t => t.Status != completed && t.Status != cancelled),
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (counts is null)
+            return new SprintTaskStatusSnapshot(0, 0, AllTerminal: true);
+
+        return new SprintTaskStatusSnapshot(
+            TotalCount: counts.Total,
+            NonCancelledCount: counts.NonCancelled,
+            AllTerminal: counts.NonTerminal == 0);
+    }
+
+    /// <summary>
     /// Gets all comments for a task, ordered by creation time.
     /// </summary>
     public async Task<List<TaskComment>> GetTaskCommentsAsync(string taskId)

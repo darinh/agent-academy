@@ -46,6 +46,18 @@ public interface ITaskQueryService
     Task<List<(string TaskId, int PrNumber)>> GetTasksWithActivePrsAsync();
 
     /// <summary>
+    /// Returns a status snapshot for the tasks linked to a sprint:
+    /// total count, non-cancelled count, and whether all tasks are in a
+    /// terminal status (Completed or Cancelled). Used by the terminal-stage
+    /// driver to classify <c>ReadyForSelfEval</c> in a single round-trip;
+    /// matches the <c>RoomLifecycleService.TerminalTaskStatuses</c> set
+    /// enforced by <c>SprintStageService.CheckImplementationPrerequisitesAsync</c>.
+    /// See <c>specs/100-product-vision/sprint-terminal-stage-handler-design.md §6.3</c>.
+    /// </summary>
+    Task<SprintTaskStatusSnapshot> GetSprintTaskStatusSnapshotAsync(
+        string sprintId, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns all comments for a task, ordered by creation date.
     /// </summary>
     Task<List<TaskComment>> GetTaskCommentsAsync(string taskId);

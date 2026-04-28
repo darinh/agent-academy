@@ -164,6 +164,13 @@ public sealed class RunSelfEvalHandler : ICommandHandler
         // Atomic flip: SelfEvaluationInFlight=true only if currently false and
         // sprint still Active+not-blocked+at Implementation. Avoids the
         // double-flip race when two RUN_SELF_EVAL calls land at once.
+        // Also stamp SelfEvalStartedAt in the same atomic write so the
+        // terminal-stage driver's 15-minute self-eval stall watchdog has a
+        // baseline when self-eval is opened via this handler path (operator
+        // /agent-driven). Without this stamp, the watchdog falls through to
+        // NoOp on the bootstrap branch and a stalled manual self-eval can
+        // sit in-flight indefinitely. See sprint-terminal-stage-handler-design.md §4.3.2.
+        var nowUtc = DateTime.UtcNow;
         var rowsFlipped = await db.Sprints
             .Where(s => s.Id == sprint.Id
                 && s.Status == "Active"
@@ -171,7 +178,8 @@ public sealed class RunSelfEvalHandler : ICommandHandler
                 && s.CurrentStage == "Implementation"
                 && !s.SelfEvaluationInFlight)
             .ExecuteUpdateAsync(setters => setters
-                .SetProperty(s => s.SelfEvaluationInFlight, true));
+                .SetProperty(s => s.SelfEvaluationInFlight, true)
+                .SetProperty(s => s.SelfEvalStartedAt, nowUtc));
 
         if (rowsFlipped == 0)
         {

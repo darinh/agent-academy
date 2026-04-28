@@ -215,6 +215,16 @@ public sealed class SprintStageService : ISprintStageService
 
         var previousStage = sprint.CurrentStage;
         sprint.CurrentStage = Stages[currentIndex + 1];
+        // Terminal-stage driver coordination (design §6.2):
+        // Stamp FinalSynthesisEnteredAt on first entry into FinalSynthesis so
+        // the FinalSynthesis stall watchdog has a baseline. Set-once invariant:
+        // if the column is already non-null (e.g., a prior force-complete from
+        // §6.4 stamped it before this advance), preserve the original value.
+        if (string.Equals(sprint.CurrentStage, "FinalSynthesis", StringComparison.Ordinal)
+            && sprint.FinalSynthesisEnteredAt is null)
+        {
+            sprint.FinalSynthesisEnteredAt = DateTime.UtcNow;
+        }
         // P1.2: reset per-stage self-drive counters when stage changes so
         // the new stage starts with a fresh round/continuation budget.
         // Otherwise rounds spent in Planning would count toward the
@@ -292,6 +302,23 @@ public sealed class SprintStageService : ISprintStageService
         // (mirrors the AdvanceStageAsync path — see rationale there).
         sprint.RoundsThisStage = 0;
         sprint.SelfDriveContinuations = 0;
+        // Terminal-stage driver coordination (sprint-terminal-stage-handler-design.md §6.2):
+        // Mirror AdvanceStageAsync's transition-side-effects so the sign-off
+        // path doesn't bypass them. Without these, an operator-configured
+        // sign-off at Implementation would advance into FinalSynthesis with
+        // FinalSynthesisEnteredAt=null (disabling the 30-min stall watchdog)
+        // AND with stale SelfEvaluationInFlight/SelfEvalAttempts left over
+        // from Implementation.
+        if (string.Equals(sprint.CurrentStage, "FinalSynthesis", StringComparison.Ordinal)
+            && sprint.FinalSynthesisEnteredAt is null)
+        {
+            sprint.FinalSynthesisEnteredAt = DateTime.UtcNow;
+        }
+        if (string.Equals(previousStage, "Implementation", StringComparison.Ordinal))
+        {
+            sprint.SelfEvaluationInFlight = false;
+            sprint.SelfEvalAttempts = 0;
+        }
 
         QueueEvent(ActivityEventType.SprintStageAdvanced,
             $"Sprint #{sprint.Number} advanced (user approved): {previousStage} → {sprint.CurrentStage}",
