@@ -430,4 +430,168 @@ public class SprintPreamblesTests
         Assert.Contains("Type: OverflowRequirements", preamble);
         Assert.Contains("free-form", preamble);
     }
+
+    // ── Runtime tool availability (Sprint #16 agent-runtime hallucination
+    // closure, 2026-04-28) ───────────────────────────────────────────────
+    //
+    // Failure mode: software-engineer-1 (Hephaestus) claimed the runtime
+    // did not expose bash/shell after a successful CLAIM_TASK, despite
+    // PR #174's SDK-builtin exclusion being intentional. The agent never
+    // attempted any structured equivalent (RUN_BUILD, RUN_TESTS,
+    // write_file SDK tool) and never escalated the gap as a specific
+    // blocker; instead it stalled. 26 rounds of analysis-paralysis
+    // followed (cap-tripped 20/20 then 26/20). See the "Agent runtime
+    // tool-availability hallucination" Proposed Addition row in
+    // specs/100-product-vision/roadmap.md (PR #196).
+    //
+    // The Implementation preamble now includes a RUNTIME TOOL AVAILABILITY
+    // section that (a) names the excluded SDK builtins so the agent
+    // recognises their absence is by design, (b) maps each common need
+    // to its structured equivalent, and (c) directs the agent to use
+    // MARK_BLOCKED with a specific structured-command request rather than
+    // declaring the runtime broken. These tests lock in the closure.
+
+    [Fact]
+    public void BuildPreamble_Implementation_RuntimeToolAvailability_NamesSdkExclusionAsByDesign()
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        // The header must be present so the agent reads this as a discrete
+        // section before the lifecycle.
+        Assert.Contains("RUNTIME TOOL AVAILABILITY", preamble);
+
+        // The excluded builtins must be named explicitly. If a future edit
+        // softens this list, the agent loses the recognition signal that
+        // their absence is expected.
+        Assert.Contains("`bash`", preamble);
+        Assert.Contains("`shell`", preamble);
+        Assert.Contains("`view`", preamble);
+        Assert.Contains("`apply_patch`", preamble);
+        // Per-tool exclusions added after adversarial review (gpt-5.3-codex,
+        // claude-opus-4.6, gpt-5.5) — the per-agent list and the preamble
+        // list MUST stay aligned, otherwise an engineer that knows
+        // create_file/str_replace_editor exist will treat their absence as
+        // a runtime fault.
+        Assert.Contains("`create_file`", preamble);
+        Assert.Contains("`str_replace_editor`", preamble);
+        Assert.Contains("`task`", preamble);
+
+        // The "by design" framing is the load-bearing phrase — without it
+        // the agent treats absence as a runtime fault.
+        Assert.Contains("by design", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_RuntimeToolAvailability_DoesNotListWriteFileAsExcluded()
+    {
+        // Regression guard against the day-zero contradiction surfaced by
+        // adversarial review (Opus + GPT-5.5): the preamble previously
+        // listed `write_file` as a NOT-exposed SDK builtin AND told the
+        // engineer to use the registered `write_file` SDK tool to write
+        // files. The model would treat the first statement as authoritative
+        // and stall on file writes. The registered custom `write_file` tool
+        // shadows the SDK builtin via ResolveExcludedSdkTools (see
+        // CopilotExecutor.cs), so write_file IS available to engineers.
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        // Isolate ONLY the "The SDK does NOT expose ..." sentence (the
+        // excluded-builtins enumeration). Subsequent paragraphs may
+        // legitimately reference write_file as the available registered
+        // tool — that's the whole point of the disambiguation.
+        var notExposedStart = preamble.IndexOf("The SDK does NOT expose", StringComparison.Ordinal);
+        var notExposedEnd = preamble.IndexOf("by design", notExposedStart, StringComparison.Ordinal);
+        Assert.True(notExposedStart > -1 && notExposedEnd > notExposedStart,
+            "Could not isolate the 'NOT expose ... by design' sentence");
+
+        var excludedSentence = preamble.Substring(notExposedStart, notExposedEnd - notExposedStart);
+        Assert.DoesNotContain("`write_file`", excludedSentence);
+
+        // But write_file MUST still appear elsewhere (mapping table or
+        // the explanatory note) as the registered tool engineers should
+        // use for file writes.
+        var afterExcludedSentence = preamble.Substring(notExposedEnd);
+        Assert.Contains("`write_file`", afterExcludedSentence);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_RuntimeToolAvailability_MapsNeedsToStructuredCommands()
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        // Each common need must have its structured equivalent named so
+        // the agent has a positive path forward, not just a list of
+        // forbidden tools.
+        Assert.Contains("RUN_BUILD", preamble);
+        Assert.Contains("RUN_TESTS", preamble);
+        Assert.Contains("read_file", preamble);
+        Assert.Contains("write_file", preamble);
+        Assert.Contains("COMMIT_CHANGES", preamble);
+        Assert.Contains("SEARCH_CODE", preamble);
+        // Added after adversarial review (gpt-5.3-codex): the prompt
+        // advertises SHOW_DIFF and GIT_LOG in its mapping table — assert
+        // them so a future regression that drops either is caught.
+        Assert.Contains("SHOW_DIFF", preamble);
+        Assert.Contains("GIT_LOG", preamble);
+        // Frontend-specific commands are also in the mapping table after
+        // the codex review — they must remain so frontend engineers
+        // (Athena) have a structured path that doesn't fall back to bash.
+        Assert.Contains("RUN_FRONTEND_BUILD", preamble);
+        Assert.Contains("RUN_TYPECHECK", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_RuntimeToolAvailability_DirectsAgentToMarkBlockedNotStall()
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        // The escalation directive — an agent that needs a capability not
+        // covered by the structured surface must surface MARK_BLOCKED
+        // with a specific request, not declare the runtime broken.
+        Assert.Contains("MARK_BLOCKED", preamble);
+        Assert.Contains("platform gap", preamble);
+
+        // Anti-pattern explicitly forbidden so the model recognises the
+        // exact phrasing it produced in Sprint #16 as wrong.
+        Assert.Contains("I do not have a bash/shell command tool in this runtime", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_RuntimeToolAvailability_MarkBlockedExampleUsesMultiLineForm()
+    {
+        // Regression guard against a parser-truncation bug surfaced by
+        // adversarial review (gpt-5.5 + gpt-5.3-codex). The inline command
+        // parser uses regex `(\w+)=(\S+)` which captures values only up to
+        // the first whitespace — so the inline form
+        //   `MARK_BLOCKED: taskId=X reason=<long sentence>`
+        // would parse `reason="<long"` and silently drop the actionable
+        // text. The prompt must therefore use the block form.
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        // The block form: `MARK_BLOCKED:\n  taskId: <...>\n  reason: <...>`
+        // must appear contiguously so the agent copies it as a unit.
+        Assert.Contains("MARK_BLOCKED:\n", preamble);
+        Assert.Contains("taskId: <your-task-GUID>", preamble);
+        Assert.Contains("reason: <", preamble);
+
+        // The inline form with `reason=` (key=value, where the parser would
+        // truncate) must NOT appear as the recommended example.
+        Assert.DoesNotContain("MARK_BLOCKED: taskId=", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_RuntimeToolAvailability_PrecedesTaskLifecycle()
+    {
+        // Ordering matters: the agent must read RUNTIME TOOL AVAILABILITY
+        // before TASK LIFECYCLE, otherwise a CLAIM_TASK -> "no bash"
+        // stall can fire before the runtime guidance is in context.
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        var runtimeIdx = preamble.IndexOf("RUNTIME TOOL AVAILABILITY", StringComparison.Ordinal);
+        var lifecycleIdx = preamble.IndexOf("TASK LIFECYCLE", StringComparison.Ordinal);
+
+        Assert.True(runtimeIdx > -1, "Implementation preamble must contain RUNTIME TOOL AVAILABILITY");
+        Assert.True(lifecycleIdx > -1, "Implementation preamble must contain TASK LIFECYCLE");
+        Assert.True(runtimeIdx < lifecycleIdx,
+            $"RUNTIME TOOL AVAILABILITY (at {runtimeIdx}) must precede TASK LIFECYCLE (at {lifecycleIdx})");
+    }
 }
