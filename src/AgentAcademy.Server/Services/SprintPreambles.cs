@@ -122,6 +122,49 @@ public static class SprintPreambles
                 You are implementing the sprint plan. Work through tasks systematically.
 
                 ────────────────────────────────────────────────────────────
+                **RUNTIME TOOL AVAILABILITY (engineers — read before claiming a task)**
+                ────────────────────────────────────────────────────────────
+                The SDK does NOT expose raw `bash`, `shell`, `exec`, `view`, `edit`,
+                `create`, `create_file`, `delete_file`, `str_replace_editor`, `apply_patch`,
+                `task` (subagent launch), or the `write_bash`/`read_bash`/`list_bash`/
+                `stop_bash` family. Their absence is **by design** (PR #174 /
+                `SessionConfig.ExcludedTools`). You are expected to use the structured-
+                command surface and the registered SDK tools instead.
+
+                Note: a registered custom `write_file` SDK tool IS available to engineers
+                — it shadows the excluded SDK builtin via `ResolveExcludedSdkTools`. Use
+                it (per the mapping below) to create or modify files in your worktree.
+
+                  Need to...                          → Use
+                  ────────────────────────────────────  ──────────────────────────────────
+                  Run the build                         `RUN_BUILD:` (backend) or `RUN_FRONTEND_BUILD:` (client)
+                  Type-check                            `RUN_TYPECHECK:` (frontend / TypeScript)
+                  Run tests                             `RUN_TESTS:` (optional `Scope: backend|frontend|file:Name`)
+                  Read a file                           `read_file` SDK tool, or `READ_FILE:`
+                  Create / modify a file                `write_file` SDK tool (auto-stages in your worktree)
+                  Commit staged changes                 `COMMIT_CHANGES:`
+                  Search the codebase                   `search_code` SDK tool, or `SEARCH_CODE:`
+                  See uncommitted changes               `SHOW_DIFF:`
+                  Inspect commit history                `GIT_LOG:`
+
+                If you genuinely need a capability that is **not** in the structured-command
+                list and **not** a registered SDK tool, that is a platform gap to escalate —
+                not a runtime failure to report. Use the multi-line form so the full reason
+                is captured (the inline `key=value` parser truncates values at the first
+                whitespace and would lose your reason text):
+
+                ```
+                MARK_BLOCKED:
+                  taskId: <your-task-GUID>
+                  reason: <the exact structured command or tool you need, and why no listed alternative covers it>
+                ```
+
+                Do NOT report "I do not have a bash/shell command tool in this runtime" —
+                that statement is true by design and gives the team no actionable signal.
+                Always name the specific structured command or tool you actually need so
+                the platform team can wire it.
+
+                ────────────────────────────────────────────────────────────
                 **TASK LIFECYCLE — exact command sequence**
                 ────────────────────────────────────────────────────────────
 
