@@ -187,26 +187,52 @@ public sealed class RoomLifecycleService : IRoomLifecycleService
     /// <summary>
     /// Scans for stale rooms (all tasks terminal) that are still Active/Completed
     /// and archives them. Returns the count of rooms cleaned up.
+    /// Thin wrapper over <see cref="CleanupStaleRoomsDetailedAsync"/>.
     /// </summary>
     public async Task<int> CleanupStaleRoomsAsync()
+    {
+        var result = await CleanupStaleRoomsDetailedAsync();
+        return result.ArchivedCount;
+    }
+
+    /// <summary>
+    /// Detailed variant of <see cref="CleanupStaleRoomsAsync"/> — same scan, but
+    /// records why each non-archived candidate was skipped (main room, no tasks,
+    /// active tasks). Surfaced via the API so operators can distinguish
+    /// "nothing to do" from "couldn't act on candidates" without reading server logs.
+    /// </summary>
+    public async Task<RoomCleanupResult> CleanupStaleRoomsDetailedAsync()
     {
         var candidateRooms = await _db.Rooms
             .Where(r => r.Status != nameof(RoomStatus.Archived))
             .ToListAsync();
 
         var cleanedCount = 0;
+        var skips = new List<RoomCleanupSkip>();
         foreach (var room in candidateRooms)
         {
             if (await IsMainCollaborationRoomAsync(room.Id))
+            {
+                skips.Add(new RoomCleanupSkip(room.Id, room.Name, RoomCleanupSkipReason.MainRoom));
                 continue;
+            }
 
             var tasks = await _db.Tasks
                 .Where(t => t.RoomId == room.Id)
                 .Select(t => t.Status)
                 .ToListAsync();
 
-            if (tasks.Count == 0 || tasks.Any(s => !TerminalTaskStatuses.Contains(s)))
+            if (tasks.Count == 0)
+            {
+                skips.Add(new RoomCleanupSkip(room.Id, room.Name, RoomCleanupSkipReason.NoTasks));
                 continue;
+            }
+
+            if (tasks.Any(s => !TerminalTaskStatuses.Contains(s)))
+            {
+                skips.Add(new RoomCleanupSkip(room.Id, room.Name, RoomCleanupSkipReason.ActiveTasks));
+                continue;
+            }
 
             await EvacuateRoomAsync(room.Id);
 
@@ -222,10 +248,18 @@ public sealed class RoomLifecycleService : IRoomLifecycleService
         if (cleanedCount > 0)
         {
             await _db.SaveChangesAsync();
-            _logger.LogInformation("Cleaned up {Count} stale room(s)", cleanedCount);
+            _logger.LogInformation(
+                "Cleaned up {Count} stale room(s); skipped {Skipped} candidate(s)",
+                cleanedCount, skips.Count);
+        }
+        else if (skips.Count > 0)
+        {
+            _logger.LogDebug(
+                "No stale rooms archived; held back {Skipped} candidate(s)",
+                skips.Count);
         }
 
-        return cleanedCount;
+        return new RoomCleanupResult(cleanedCount, skips.Count, skips);
     }
 
     // ── Private Helpers ─────────────────────────────────────────

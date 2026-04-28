@@ -951,6 +951,143 @@ public class RoomLifecycleServiceTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  CleanupStaleRoomsDetailedAsync — observability surface
+    //  (per-room skip reasons surfaced via API + CLEANUP_ROOMS command)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task CleanupStaleDetailed_EmptyDb_ReturnsZeroAndNoSkips()
+    {
+        var (svc, _) = CreateScope();
+
+        var result = await svc.CleanupStaleRoomsDetailedAsync();
+
+        Assert.Equal(0, result.ArchivedCount);
+        Assert.Equal(0, result.SkippedCount);
+        Assert.Empty(result.Skips);
+    }
+
+    [Fact]
+    public async Task CleanupStaleDetailed_RecordsMainRoomSkipReason()
+    {
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db);
+        db.Tasks.Add(MakeTask(roomId: DefaultRoomId, status: nameof(TaskStatus.Completed)));
+        db.SaveChanges();
+
+        var result = await svc.CleanupStaleRoomsDetailedAsync();
+
+        Assert.Equal(0, result.ArchivedCount);
+        var skip = Assert.Single(result.Skips);
+        Assert.Equal(DefaultRoomId, skip.RoomId);
+        Assert.Equal(RoomCleanupSkipReason.MainRoom, skip.Reason);
+    }
+
+    [Fact]
+    public async Task CleanupStaleDetailed_RecordsNoTasksSkipReason()
+    {
+        var (svc, db) = CreateScope();
+        db.Rooms.Add(MakeRoom("empty", "Empty Room"));
+        db.SaveChanges();
+
+        var result = await svc.CleanupStaleRoomsDetailedAsync();
+
+        Assert.Equal(0, result.ArchivedCount);
+        var skip = Assert.Single(result.Skips);
+        Assert.Equal("empty", skip.RoomId);
+        Assert.Equal("Empty Room", skip.RoomName);
+        Assert.Equal(RoomCleanupSkipReason.NoTasks, skip.Reason);
+    }
+
+    [Fact]
+    public async Task CleanupStaleDetailed_RecordsActiveTasksSkipReason()
+    {
+        var (svc, db) = CreateScope();
+        db.Rooms.Add(MakeRoom("busy", "Busy Room"));
+        db.Tasks.Add(MakeTask("t1", "busy", nameof(TaskStatus.Active)));
+        db.SaveChanges();
+
+        var result = await svc.CleanupStaleRoomsDetailedAsync();
+
+        Assert.Equal(0, result.ArchivedCount);
+        var skip = Assert.Single(result.Skips);
+        Assert.Equal("busy", skip.RoomId);
+        Assert.Equal(RoomCleanupSkipReason.ActiveTasks, skip.Reason);
+    }
+
+    [Fact]
+    public async Task CleanupStaleDetailed_MixedRooms_ArchivesStaleAndRecordsAllSkipReasons()
+    {
+        var (svc, db) = CreateScope();
+        SeedDefaultRoom(db);                                                  // → MainRoom skip
+        db.Tasks.Add(MakeTask("t-main", DefaultRoomId, nameof(TaskStatus.Completed)));
+        db.Rooms.Add(MakeRoom("stale", "Stale Room"));                        // → archived
+        db.Tasks.Add(MakeTask("t-stale", "stale", nameof(TaskStatus.Completed)));
+        db.Rooms.Add(MakeRoom("empty", "Empty Room"));                        // → NoTasks skip
+        db.Rooms.Add(MakeRoom("busy", "Busy Room"));                          // → ActiveTasks skip
+        db.Tasks.Add(MakeTask("t-busy", "busy", nameof(TaskStatus.Active)));
+        db.SaveChanges();
+
+        var result = await svc.CleanupStaleRoomsDetailedAsync();
+
+        Assert.Equal(1, result.ArchivedCount);
+        Assert.Equal(3, result.SkippedCount);
+        Assert.Equal(3, result.Skips.Count);
+
+        Assert.Contains(result.Skips, s => s.RoomId == DefaultRoomId && s.Reason == RoomCleanupSkipReason.MainRoom);
+        Assert.Contains(result.Skips, s => s.RoomId == "empty" && s.Reason == RoomCleanupSkipReason.NoTasks);
+        Assert.Contains(result.Skips, s => s.RoomId == "busy" && s.Reason == RoomCleanupSkipReason.ActiveTasks);
+        Assert.DoesNotContain(result.Skips, s => s.RoomId == "stale");
+
+        db.ChangeTracker.Clear();
+        var stale = await db.Rooms.FindAsync("stale");
+        Assert.Equal(nameof(RoomStatus.Archived), stale!.Status);
+    }
+
+    [Fact]
+    public async Task CleanupStaleAsync_LegacyIntOverload_MatchesDetailedArchivedCount()
+    {
+        var (svc, db) = CreateScope();
+        db.Rooms.Add(MakeRoom("stale", "Stale"));
+        db.Tasks.Add(MakeTask("t1", "stale", nameof(TaskStatus.Completed)));
+        db.Rooms.Add(MakeRoom("busy", "Busy"));
+        db.Tasks.Add(MakeTask("t2", "busy", nameof(TaskStatus.Active)));
+        db.SaveChanges();
+
+        var legacy = await svc.CleanupStaleRoomsAsync();
+
+        Assert.Equal(1, legacy);
+    }
+
+    [Theory]
+    [InlineData(RoomCleanupSkipReason.MainRoom, "main_room")]
+    [InlineData(RoomCleanupSkipReason.NoTasks, "no_tasks")]
+    [InlineData(RoomCleanupSkipReason.ActiveTasks, "active_tasks")]
+    public void RoomCleanupSkip_ReasonWireValue_IsStableAcrossRenames(RoomCleanupSkipReason reason, string expectedWire)
+    {
+        // Contract test: the strings on the right are part of the public
+        // /api/rooms/cleanup + CLEANUP_ROOMS payload. Changing them is a
+        // breaking API change. Adding a new enum member without updating
+        // ReasonWireValue (and adding a row here) makes the switch throw.
+        var skip = new RoomCleanupSkip("r", "Room", reason);
+        Assert.Equal(expectedWire, skip.ReasonWireValue);
+    }
+
+    [Fact]
+    public void RoomCleanupSkip_ReasonWireValue_AllEnumValuesMapped()
+    {
+        // Defense in depth: ensures any new RoomCleanupSkipReason added in
+        // the future without a corresponding wire mapping fails loudly here
+        // rather than at runtime in production.
+        foreach (RoomCleanupSkipReason value in Enum.GetValues<RoomCleanupSkipReason>())
+        {
+            var skip = new RoomCleanupSkip("r", "Room", value);
+            var wire = skip.ReasonWireValue;
+            Assert.False(string.IsNullOrWhiteSpace(wire));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  MarkSprintRoomsCompletedAsync (P1.8)
     // ═══════════════════════════════════════════════════════════════
 
