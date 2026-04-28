@@ -258,6 +258,121 @@ public class SprintPreamblesTests
         Assert.Contains("Goal card content is automatically included in the PR description", preamble);
     }
 
+    // ── P1.4 ceremony lifecycle gap closure ──────────────────────
+    // Regression: roadmap line 216 (filed 2026-04-26 from Sprint #2 audit)
+    // diagnosed three failure modes that prevented the P1.4 self-evaluation
+    // ceremony from ever firing:
+    //   (1) UPDATE_TASK status=Completed → VALIDATION (terminal status rejected)
+    //   (2) APPROVE_TASK with invented slug ID → NOT_FOUND
+    //   (3) MERGE_TASK exit 1 (consequence of (2) — no diff to squash)
+    //
+    // Both halves of the prescribed fix shipped in PR #157 (commit 9665209,
+    // 2026-04-25): the Implementation preamble now spells out the full
+    // lifecycle command sequence with explicit warnings, AND
+    // TaskWriteToolWrapper.CreateTaskAsync returns "- ID: {GUID}" as the
+    // second response line so the LLM can echo it back. Live verification
+    // (Sprint #14, 200 records, post-#157) shows zero recurrences of the
+    // three failure modes.
+    //
+    // These tests lock in the closure. If any of them fail, a future
+    // preamble edit has silently regressed the fix — re-read PR #157 and
+    // roadmap line 216 before changing the assertion.
+
+    [Fact]
+    public void BuildPreamble_Implementation_LifecycleClosure_ContainsFullStateDiagram()
+    {
+        // The full state diagram MUST appear contiguously so agents read
+        // it as a single coherent flow, not just see the words scattered
+        // across the preamble. This is the contract — if a future edit
+        // breaks the diagram into pieces or reorders the states,
+        // assertion fails.
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        Assert.Contains(
+            "Queued → Active → (InReview ⟷ AwaitingValidation) → Approved → Completed",
+            preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_LifecycleClosure_RejectsCompletedStatusUpdate()
+    {
+        // Failure mode (1): the preamble must explicitly tell agents that
+        // UPDATE_TASK status=Completed is invalid and will be rejected.
+        // Anchoring on the full warning sentence (not just three loose
+        // substrings that could co-occur in a *positive* example) so a
+        // future edit that softens the warning fails this test.
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        Assert.Contains(
+            "⚠️ `UPDATE_TASK status=Completed` is **NOT VALID** and will be rejected.",
+            preamble);
+        // The "do not retry" guidance must follow — this is the line that
+        // breaks the planner out of the retry loop observed in Sprint #2.
+        Assert.Contains(
+            "Do not retry with status=Completed; advance the",
+            preamble);
+        Assert.Contains(
+            "status to `InReview` (or `AwaitingValidation`) and continue to step 4.",
+            preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_LifecycleClosure_ForbidsInventedSlugIds()
+    {
+        // Failure mode (2): the preamble must explicitly tell the planner
+        // to capture the GUID returned by create_task and to NEVER invent
+        // slug-style IDs from the title.
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        Assert.Contains("- ID: <GUID>", preamble);
+        Assert.Contains("Do NOT invent slug IDs", preamble);
+        Assert.Contains("Slug IDs derived from titles will not resolve", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_LifecycleClosure_StepOrderingIsCorrect()
+    {
+        // Failure mode (3) was a downstream consequence of (2), but the
+        // proximate cure is the correct command ordering. The preamble
+        // enumerates the lifecycle in six numbered steps; their headers
+        // must appear in dependency order:
+        //   1. Create (create_task) → 2. Claim (CLAIM_TASK)
+        //   → 3. Work the task (UPDATE_TASK + CREATE_PR)
+        //   → 4. Review the PR → 5. Approve the task (APPROVE_TASK)
+        //   → 6. Merge (MERGE_PR / MERGE_TASK)
+        // Anchoring on the numbered step headers (not raw first-occurrence
+        // of each verb) avoids false positives from the step-3 warning
+        // block, which forward-references MERGE_PR by design.
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        var step1 = preamble.IndexOf("**1. Create", System.StringComparison.Ordinal);
+        var step2 = preamble.IndexOf("**2. Claim", System.StringComparison.Ordinal);
+        var step3 = preamble.IndexOf("**3. Work the task", System.StringComparison.Ordinal);
+        var step4 = preamble.IndexOf("**4. Review the PR", System.StringComparison.Ordinal);
+        var step5 = preamble.IndexOf("**5. Approve the task", System.StringComparison.Ordinal);
+        var step6 = preamble.IndexOf("**6. Merge", System.StringComparison.Ordinal);
+
+        Assert.True(step1 >= 0, "step 1 (Create) header must be present");
+        Assert.True(step2 > step1, "step 2 (Claim) must follow step 1");
+        Assert.True(step3 > step2, "step 3 (Work the task) must follow step 2");
+        Assert.True(step4 > step3, "step 4 (Review the PR) must follow step 3");
+        Assert.True(step5 > step4, "step 5 (Approve the task) must follow step 4");
+        Assert.True(step6 > step5, "step 6 (Merge) must follow step 5");
+
+        // The step-1 body must reference create_task; step-5 body must
+        // reference APPROVE_TASK; step-6 body must reference MERGE_PR.
+        // These verb-in-section assertions guard against a future edit
+        // that keeps the headers but rewrites the bodies into a different
+        // sequence.
+        var step1Body = preamble.Substring(step1, step2 - step1);
+        var step5Body = preamble.Substring(step5, step6 - step5);
+        var step6Body = preamble.Substring(step6);
+
+        Assert.Contains("create_task", step1Body);
+        Assert.Contains("APPROVE_TASK", step5Body);
+        Assert.Contains("MERGE_PR", step6Body);
+    }
+
     // ── STORE_ARTIFACT JSON schema visibility ────────────────────
     // Regression: Sprint #14 stalled in Intake because the planner kept
     // submitting markdown for RequirementsDocument / SprintPlan /
