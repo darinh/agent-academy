@@ -30,6 +30,7 @@ public class SprintControllerTests : IDisposable
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
     private readonly IAgentOrchestrator _orchestrator;
+    private readonly IOrchestratorWakeService _wakeService;
     private readonly SprintController _controller;
 
     public SprintControllerTests()
@@ -87,13 +88,14 @@ public class SprintControllerTests : IDisposable
         var auditor = new HumanCommandAuditor(scopeFactory);
 
         _orchestrator = Substitute.For<IAgentOrchestrator>();
+        _wakeService = Substitute.For<IOrchestratorWakeService>();
         var commandHandlers = new ICommandHandler[] { new RunSelfEvalHandler() };
         var selfEvalOptions = Options.Create(new SelfEvalOptions { MaxSelfEvalAttempts = 3 });
 
         _controller = new SprintController(
             _sprintService, _sprintStageService, _artifactService, _metricsCalculator,
             scheduleService, _roomService, sessionService,
-            _orchestrator, auditor, scopeFactory, commandHandlers, _db, selfEvalOptions,
+            _wakeService, auditor, scopeFactory, commandHandlers, selfEvalOptions,
             NullLogger<SprintController>.Instance);
     }
 
@@ -826,6 +828,8 @@ public class SprintControllerTests : IDisposable
         Assert.Equal(nameof(CommandStatus.Error), body.Status);
         Assert.Equal(CommandErrorCode.Conflict, body.ErrorCode);
         _orchestrator.DidNotReceive().HandleHumanMessage(Arg.Any<string>());
+        await _wakeService.DidNotReceive().WakeWorkspaceRoomsForSprintAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -857,7 +861,9 @@ public class SprintControllerTests : IDisposable
         Assert.True(refreshed!.SelfEvaluationInFlight,
             "POST /self-eval/start must flip the in-flight flag.");
 
-        _orchestrator.Received(1).HandleHumanMessage("room-1");
+        _orchestrator.Received(0).HandleHumanMessage(Arg.Any<string>());
+        await _wakeService.Received(1).WakeWorkspaceRoomsForSprintAsync(
+            sprint.Id, Arg.Any<CancellationToken>());
 
         var audit = await _db.CommandAudits.SingleAsync(a => a.CorrelationId == body.CorrelationId);
         Assert.Equal("RUN_SELF_EVAL", audit.Command);
@@ -879,8 +885,8 @@ public class SprintControllerTests : IDisposable
         });
         var sprint = await SeedImplementationSprintAsync();
 
-        _orchestrator
-            .When(o => o.HandleHumanMessage(Arg.Any<string>()))
+        _wakeService
+            .When(w => w.WakeWorkspaceRoomsForSprintAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
             .Do(_ => throw new InvalidOperationException("orchestrator down"));
 
         var result = await _controller.StartSelfEval(sprint.Id);

@@ -4,7 +4,6 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using AgentAcademy.Server.Services.Contracts;
 
@@ -25,11 +24,10 @@ public class SprintController : ControllerBase
     private readonly ISprintScheduleService _scheduleService;
     private readonly IRoomService _roomService;
     private readonly IConversationSessionService _sessionService;
-    private readonly IAgentOrchestrator _orchestrator;
+    private readonly IOrchestratorWakeService _wakeService;
     private readonly HumanCommandAuditor _auditor;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Dictionary<string, ICommandHandler> _commandHandlers;
-    private readonly AgentAcademyDbContext _db;
     private readonly IOptions<SelfEvalOptions> _selfEvalOptions;
     private readonly ILogger<SprintController> _logger;
 
@@ -41,11 +39,10 @@ public class SprintController : ControllerBase
         ISprintScheduleService scheduleService,
         IRoomService roomService,
         IConversationSessionService sessionService,
-        IAgentOrchestrator orchestrator,
+        IOrchestratorWakeService wakeService,
         HumanCommandAuditor auditor,
         IServiceScopeFactory scopeFactory,
         IEnumerable<ICommandHandler> commandHandlers,
-        AgentAcademyDbContext db,
         IOptions<SelfEvalOptions> selfEvalOptions,
         ILogger<SprintController> logger)
     {
@@ -56,11 +53,10 @@ public class SprintController : ControllerBase
         _scheduleService = scheduleService;
         _roomService = roomService;
         _sessionService = sessionService;
-        _orchestrator = orchestrator;
+        _wakeService = wakeService;
         _auditor = auditor;
         _scopeFactory = scopeFactory;
         _commandHandlers = commandHandlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
-        _db = db;
         _selfEvalOptions = selfEvalOptions;
         _logger = logger;
     }
@@ -555,7 +551,22 @@ public class SprintController : ControllerBase
 
         if (envelope.Status == CommandStatus.Success)
         {
-            await TryWakeOrchestratorForSprintAsync(id);
+            // Wake is best-effort: the in-flight flag has already been
+            // flipped, so the next agent round will pick up the self-eval
+            // preamble even if the wake fails. The wake service itself
+            // swallows internal errors (per IOrchestratorWakeService
+            // contract), but defense-in-depth keeps the API response stable
+            // against any future regressions in that contract.
+            try
+            {
+                await _wakeService.WakeWorkspaceRoomsForSprintAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Wake-orchestrator dispatch failed for sprint {Id} after RUN_SELF_EVAL; " +
+                    "in-flight flag is set, agents will pick up preamble on next round.", id);
+            }
         }
 
         var status = envelope.Status switch
@@ -605,49 +616,10 @@ public class SprintController : ControllerBase
             SelfEvaluationInFlight: sprint.SelfEvaluationInFlight));
     }
 
-    /// <summary>
-    /// Wakes the orchestrator for every active room in the sprint's workspace
-    /// so an agent round picks up the self-eval preamble. Best-effort: errors
-    /// are logged but do not fail the API call (the flag is already flipped).
-    /// </summary>
-    private async Task TryWakeOrchestratorForSprintAsync(string sprintId)
-    {
-        try
-        {
-            var sprint = await _sprintService.GetSprintByIdAsync(sprintId);
-            if (sprint is null || string.IsNullOrEmpty(sprint.WorkspacePath))
-                return;
-
-            var archived = nameof(RoomStatus.Archived);
-            var completed = nameof(RoomStatus.Completed);
-            var roomIds = await _db.Rooms
-                .Where(r => r.WorkspacePath == sprint.WorkspacePath
-                    && r.Status != archived
-                    && r.Status != completed)
-                .Select(r => r.Id)
-                .ToListAsync();
-
-            foreach (var roomId in roomIds)
-            {
-                try
-                {
-                    _orchestrator.HandleHumanMessage(roomId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Self-eval API: failed to wake orchestrator for room {RoomId} (sprint {SprintId}); " +
-                        "agents will pick up the self-eval preamble on the next round.",
-                        roomId, sprintId);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Self-eval API: failed to enumerate rooms to wake for sprint {SprintId}.", sprintId);
-        }
-    }
+    // Wake mechanism: extracted to <see cref="IOrchestratorWakeService"/>
+    // so the terminal-stage driver shares the implementation. The previous
+    // private TryWakeOrchestratorForSprintAsync helper has been removed.
+    // See specs/100-product-vision/sprint-terminal-stage-handler-design.md §4.2.1.
 
     // ── Schedule CRUD ──────────────────────────────────────────
 

@@ -248,6 +248,27 @@ public sealed class SprintService : Contracts.ISprintService
 
         sprint.Status = "Completed";
         sprint.CompletedAt = DateTime.UtcNow;
+        // Terminal-stage driver consistency hardening (design §6.4):
+        // When force=true is used to leap from a non-terminal stage, advance
+        // currentStage to FinalSynthesis so the snapshot is internally
+        // consistent (Status='Completed' ⇒ CurrentStage='FinalSynthesis').
+        // This addresses the Sprint #11 inconsistency documented in the design
+        // doc §1. FinalSynthesisEnteredAt is set-once: only stamp it if the
+        // sprint never previously entered FinalSynthesis (preserves the
+        // audit signal "when did the team actually enter synthesis?" for
+        // sprints that did go through the proper advance path before being
+        // force-completed).
+        var forcedStageAdvance = false;
+        var previousStageForLog = sprint.CurrentStage;
+        if (force && !string.Equals(sprint.CurrentStage, "FinalSynthesis", StringComparison.Ordinal))
+        {
+            sprint.CurrentStage = "FinalSynthesis";
+            forcedStageAdvance = true;
+            if (sprint.FinalSynthesisEnteredAt is null)
+            {
+                sprint.FinalSynthesisEnteredAt = sprint.CompletedAt;
+            }
+        }
         // Terminal transitions clear the blocked flag — a terminated sprint
         // is no longer "paused waiting on a human"; the snapshot must not
         // expose contradictory state to API clients.
@@ -275,6 +296,19 @@ public sealed class SprintService : Contracts.ISprintService
         _logger.LogInformation(
             "Completed sprint #{Number} ({Id}) for workspace {Workspace}",
             sprint.Number, sprint.Id, sprint.WorkspacePath);
+
+        if (forcedStageAdvance)
+        {
+            // Operator-visibility warning per design §6.4. Tracks the
+            // historical force-complete pattern (Sprint #11/#15) so it shows
+            // up in logs as the team transitions away from manual operator
+            // ceremony.
+            _logger.LogWarning(
+                "Sprint #{Number} force-completed at non-terminal stage {OldStage}; " +
+                "advancing currentStage to FinalSynthesis to preserve the invariant " +
+                "Status='Completed' ⇒ CurrentStage='FinalSynthesis'.",
+                sprint.Number, previousStageForLog);
+        }
 
         // Auto-start the next sprint if configured
         await TryAutoStartNextSprintAsync(sprint);

@@ -191,6 +191,12 @@ public static class AgentPipelineExtensions
         services.AddOptions<SelfEvalOptions>()
             .Configure<Microsoft.Extensions.Configuration.IConfiguration>((opts, cfg) =>
                 cfg.GetSection(SelfEvalOptions.SectionName).Bind(opts));
+
+        // Terminal-stage ceremony driver — stall watchdog windows (default
+        // 30/15 min). See sprint-terminal-stage-handler-design.md §5.3.
+        services.AddOptions<TerminalStageOptions>()
+            .Configure<Microsoft.Extensions.Configuration.IConfiguration>((opts, cfg) =>
+                cfg.GetSection(TerminalStageOptions.SectionName).Bind(opts));
         services.AddSingleton<Contracts.ISelfDriveDecisionService, SelfDriveDecisionService>();
         services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
