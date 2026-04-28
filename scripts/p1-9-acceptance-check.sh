@@ -253,11 +253,24 @@ if [[ "$ROOM_CODE" == "200" ]]; then
     Completed|Archived|ReadOnly)
       report PASS "8." "room $ROOM_ID is $ROOM_STATUS (read-only)"
       ;;
-    Active)
-      if [[ "$SPRINT_STATUS" == "Completed" || "$SPRINT_STATUS" == "Cancelled" ]]; then
-        report FAIL "8." "sprint is $SPRINT_STATUS but room $ROOM_ID still Active (P1.8 freeze did not fire)"
+    Active|Idle|AttentionRequired)
+      # All three are "alive" room states (RoomStatus enum values that are
+      # NOT terminal/read-only). Persistent main collaboration rooms are
+      # exempt from sprint-complete terminal freeze by design — the B1
+      # invariant in RoomLifecycleService.GetExemptMainRoomIdsAsync keeps
+      # them writable across sprint boundaries so the next sprint can kick
+      # off in them (RoomLifecycleService.cs:55-65, 295-313;
+      # RoomService.cs:451-477). Step 8's "room transitions to read-only"
+      # criterion does not apply to such rooms; report NA regardless of
+      # sprint state. For non-main workspace rooms, an alive state after
+      # the sprint terminates means P1.8 freeze did not fire — that is a
+      # FAIL.
+      if [[ "$ROOM_ID" == "main" ]]; then
+        report NA "8." "room.status=$ROOM_STATUS (room '$ROOM_ID' is the persistent main collaboration room — exempt from terminal freeze by B1 invariant)"
+      elif [[ "$SPRINT_STATUS" == "Completed" || "$SPRINT_STATUS" == "Cancelled" ]]; then
+        report FAIL "8." "sprint is $SPRINT_STATUS but room $ROOM_ID still $ROOM_STATUS (P1.8 freeze did not fire)"
       else
-        report NA "8." "sprint not yet terminal (status=$SPRINT_STATUS); room.status=Active is expected here"
+        report NA "8." "sprint not yet terminal (status=$SPRINT_STATUS); room.status=$ROOM_STATUS is expected here"
       fi
       ;;
     *) report UNK "8." "room.status=$ROOM_STATUS (unrecognized)" ;;
