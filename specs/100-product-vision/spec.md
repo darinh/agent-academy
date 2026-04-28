@@ -40,6 +40,40 @@ Artifacts are not optional. They are the **forcing function** that makes agents 
 
 The agent that fails to push back on an incoherent request and just starts working is **operating incorrectly**. The expected behavior is: read the request, identify scope-cohesion problems, propose a tighter scope, get human agreement, *then* proceed. This is a load-bearing behavior of the product, not a polish item.
 
+### 3.4 Terminal-Stage Ceremony Chain (auto-firing)
+
+Phases 4 (Self-Evaluation Ceremony) and 5 (Final Synthesis) above are **driven by the system, not by the human or the agents**. When implementation work reaches a natural completion point, the platform fires the ceremony chain on its own and walks the sprint to terminal state without operator intervention. This is what makes "the human steps away" (§5) work for the end of a sprint, not just the middle.
+
+Concretely, after each agent round in a sprint at `currentStage=Implementation`, the platform classifies sprint state and fires **at most one transition per round**:
+
+```
+[Implementation, every task is Completed or Cancelled, with at least one Completed]
+        │
+        ▼  (1) auto-fire RUN_SELF_EVAL — agents produce a SelfEvaluationReport
+        │
+        ▼  (2) on AllPass artifact stored: AdvanceStage(Implementation → FinalSynthesis)
+        │
+        ▼  (3) FinalSynthesis preamble drives agents to produce a SprintReport
+        │
+        ▼  (4) on SprintReport artifact stored: CompleteSprint(force=false)
+        │
+        ▼
+[status=Completed, currentStage=FinalSynthesis]
+```
+
+A sprint where **every task is Cancelled** (no work was completed) does not trigger the chain — it stays in the driver's `NotApplicable` state and requires operator `force=true` completion via the existing escape valve. There is nothing to self-evaluate; the team did not produce work.
+
+Each step is its own atomic transition guarded by the existing artifact + verdict gates. The driver does not bypass any gate; it makes the gates **observable on natural sprint progression** rather than only when an operator manually invokes them. Failure at any step (e.g., self-eval cap exceeded, watchdog timeout, missing artifact) routes through `MarkSprintBlocked` → `NeedsInput` notification — the same human-attention surface the rest of the system already uses.
+
+Two invariants govern the chain:
+
+- **One step per round.** Transitions cascade across rounds, not within a single round runner invocation. Steps (2) and (4) — the gate-passing transitions — each emit their own `SprintStageAdvanced` / `SprintCompleted` `ActivityEventEntity` row through the existing service methods, so the audit trail (§6) shows the ceremony walking forward stage-by-stage rather than as a single opaque "completed" event. Steps (1) and (3) are observable via the existing self-evaluation audit surface and the per-round agent activity, respectively.
+- **`force=true` remains the human escape valve.** Operator overrides via `POST /api/sprints/{id}/complete?force=true` bypass the driver. When `force=true` is used at a non-terminal `currentStage`, the operation also advances `currentStage` to `FinalSynthesis` so the snapshot is internally consistent (no `status=Completed` while `currentStage=Implementation`).
+
+Without this chain, P1.4's self-evaluation ceremony and P1.6's `SprintReport` artifact gate never fired on a real sprint — every Completed sprint in the database had `selfEvalAttempts=0` and zero `SprintReport` artifacts. The chain is the trigger; P1.4 + P1.6 are the gates it walks the sprint through.
+
+> Implementation: see [`sprint-terminal-stage-handler-design.md`](./sprint-terminal-stage-handler-design.md). Shipped 2026-04-28 in PR #192.
+
 ## 4. Rooms — Scope Container for a Sprint
 
 A room is the scoped chat record for one sprint.
