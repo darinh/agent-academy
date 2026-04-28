@@ -3,6 +3,12 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Runtime tool-availability prompt guidance now consistently points agents at structured commands and registered SDK tools across the four prompt surfaces touched by [PR #197](https://github.com/darinh/agent-academy/pull/197), reducing false "missing bash" blockers; 19 regression tests were added to keep those prompts from drifting.
+
 ## v4.0.0 (2026-04-21)
 
 ### Features
